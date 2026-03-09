@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using FeatBit.Cli.Api.Models;
+using FeatBit.Cli.Configuration;
 
 namespace FeatBit.Cli.Serialization;
 
@@ -9,6 +10,7 @@ namespace FeatBit.Cli.Serialization;
 [JsonSerializable(typeof(PagedResult<FeatureFlagVm>))]
 [JsonSerializable(typeof(List<ProjectWithEnvs>))]
 [JsonSerializable(typeof(List<FeatureFlagVm>))]
+[JsonSerializable(typeof(UserConfig))]
 internal sealed partial class FeatBitJsonContext : JsonSerializerContext
 {
 }
