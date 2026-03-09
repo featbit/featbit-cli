@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/FeatBit.Cli/FeatBit.Cli.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/FeatBit.Cli.Tests/FeatBit.Cli.Tests.csproj" />
+  </Folder>
+</Solution>
