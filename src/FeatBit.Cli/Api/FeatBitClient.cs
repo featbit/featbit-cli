@@ -68,34 +68,57 @@ public sealed class FeatBitClient : IFeatBitClient
         JsonTypeInfo<ApiResponse<T>> responseTypeInfo,
         CancellationToken cancellationToken)
     {
-        using var response = await _httpClient.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            return new ApiResponse<T>
-            {
-                Success = false,
-                Errors =
-                [
-                    $"HTTP {(int)response.StatusCode} {response.StatusCode}",
-                    string.IsNullOrWhiteSpace(body) ? "No error body returned." : body
-                ]
-            };
+            response = await _httpClient.GetAsync(path, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        var payload = await JsonSerializer.DeserializeAsync(stream, responseTypeInfo, cancellationToken);
-        if (payload is null)
+        catch (HttpRequestException ex)
         {
             return new ApiResponse<T>
             {
                 Success = false,
-                Errors = ["Empty or invalid JSON response."]
+                Errors = [$"Network error: {ex.Message}"]
+            };
+        }
+        catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new ApiResponse<T>
+            {
+                Success = false,
+                Errors = [$"Network error: request timed out. {ex.Message}"]
             };
         }
 
-        return payload;
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var body = await response.Content.ReadAsStringAsync(cancellationToken);
+                return new ApiResponse<T>
+                {
+                    Success = false,
+                    Errors =
+                    [
+                        $"HTTP {(int)response.StatusCode} {response.StatusCode}",
+                        string.IsNullOrWhiteSpace(body) ? "No error body returned." : body
+                    ]
+                };
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+            var payload = await JsonSerializer.DeserializeAsync(stream, responseTypeInfo, cancellationToken);
+            if (payload is null)
+            {
+                return new ApiResponse<T>
+                {
+                    Success = false,
+                    Errors = ["Empty or invalid JSON response."]
+                };
+            }
+
+            return payload;
+        }
     }
 
     private string NormalizeAuthorizationValue()
