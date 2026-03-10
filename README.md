@@ -10,6 +10,29 @@ The current scope focuses on three common operations:
 
 It also includes user-level configuration commands so you can store your FeatBit API host, access token, and organization ID outside the repository.
 
+## Quick Start
+
+1. Build or download the CLI binary (see [Build](#build) or [Native AOT Publish](#native-aot-publish)).
+2. Initialize your local config once:
+
+   ```bash
+   featbit config init
+   ```
+
+3. Verify the credentials are correct:
+
+   ```bash
+   featbit config validate
+   ```
+
+4. Start using commands:
+
+   ```bash
+   featbit project list
+   featbit project get <project-id>
+   featbit flag list <env-id>
+   ```
+
 ## Features
 
 - .NET 10 CLI implementation
@@ -61,6 +84,30 @@ dotnet publish src/FeatBit.Cli/FeatBit.Cli.csproj -c Release -r win-x64
 
 On Windows, Native AOT requires the platform linker prerequisites, including Visual Studio C++ build tools.
 
+### Installation After Publish
+
+After publishing, copy the output binary to a directory on your `PATH` so you can run `featbit` from anywhere:
+
+**Windows:**
+
+```powershell
+# Copy to a directory already on PATH, for example:
+copy src\FeatBit.Cli\bin\Release\net10.0\win-x64\publish\FeatBit.Cli.exe C:\tools\featbit.exe
+```
+
+**Linux / macOS:**
+
+```bash
+cp src/FeatBit.Cli/bin/Release/net10.0/linux-x64/publish/FeatBit.Cli /usr/local/bin/featbit
+chmod +x /usr/local/bin/featbit
+```
+
+When running from source instead of a published binary, replace `featbit` in all examples below with:
+
+```bash
+dotnet run --project src/FeatBit.Cli --
+```
+
 ## Configuration
 
 The CLI resolves configuration in this order:
@@ -96,87 +143,244 @@ Typical locations:
 
 ## Config Commands
 
-Initialize config interactively:
+### `config init`
+
+Initialize config interactively. Prompts for host, access token, and organization ID. Press Enter to keep the current value for any field.
 
 ```bash
 featbit config init
 ```
 
-Set one or more values directly:
+Example session:
+
+```
+Initialize FeatBit CLI user config
+Press Enter to keep the current value.
+
+Host [https://app-api.featbit.co]:
+Access token [<empty>]: api-xxxxxxxxxxxxxxxx
+Organization [<empty>]: 4ce9b8b9-0000-0000-0000-b13d0097b159
+Config saved to: /home/user/.config/featbit/config.json
+```
+
+### `config set`
+
+Set one or more values non-interactively. At least one of `--host`, `--token`, or `--org` must be provided.
 
 ```bash
 featbit config set --host https://app-api.featbit.co --token api-xxxxx --org <organization-id>
 ```
 
-Show current config:
+You can set individual fields without touching the others:
+
+```bash
+featbit config set --token api-new-token
+```
+
+### `config show`
+
+Display the current config. The token is masked for safety.
 
 ```bash
 featbit config show
 ```
 
-Clear saved config:
+Example output:
+
+```
+Config file: /home/user/.config/featbit/config.json
+host: https://app-api.featbit.co
+token: api-...xTg
+organization: 4ce9b8b9-0000-0000-0000-b13d0097b159
+```
+
+### `config clear`
+
+Remove the saved config file.
 
 ```bash
 featbit config clear
 ```
 
-Validate the current configuration by calling the FeatBit API:
+Prints `Config cleared.` or `Config file not found.` (exit code `0` in both cases).
+
+### `config validate`
+
+Validate the current configuration by calling the FeatBit API. Accepts the same `--host`, `--token`, and `--org` flags to override saved values without writing to disk.
 
 ```bash
 featbit config validate
+featbit config validate --token api-other-token
+featbit config validate --host https://self-hosted.example.com
+```
+
+Example output on success:
+
+```
+Config validation succeeded.
+Host: https://app-api.featbit.co
+Organization: 4ce9b8b9-0000-0000-0000-b13d0097b159
+Projects fetched: 3
 ```
 
 Validation exit codes:
 
-- `0` - success
-- `1` - general failure
-- `2` - authentication failure
-- `3` - network failure
+| Code | Meaning |
+| ---- | ------- |
+| `0` | Success |
+| `1` | General failure |
+| `2` | Authentication failure (HTTP 401 / 403) |
+| `3` | Network failure (DNS, connection refused, timeout) |
 
 ## Usage
 
-List projects:
+### `project list`
+
+List all projects in the organization.
 
 ```bash
 featbit project list
+featbit project list --json
 ```
 
-List projects with explicit parameters:
+Table output columns: `Id`, `Name`, `Key`, `EnvCount`
+
+Example table output:
+
+```
+Id                                   | Name          | Key           | EnvCount
+-------------------------------------+---------------+---------------+---------
+2c9b3a7d-0000-0000-0000-9e38128ca935 | My Project    | my-project    | 2
+```
+
+### `project get`
+
+Fetch a single project and its environments by project ID (must be a valid GUID).
+
+```bash
+featbit project get <project-id>
+featbit project get <project-id> --json
+```
+
+Table output shows project name, key, ID, then an environment table with columns: `EnvId`, `Name`, `Key`, `Description`
+
+Example table output:
+
+```
+Project: My Project (my-project)
+Id: 2c9b3a7d-0000-0000-0000-9e38128ca935
+
+EnvId                                | Name | Key  | Description
+-------------------------------------+------+------+------------
+b60c6bc0-0000-0000-0000-7f0ade9ff94c | Dev  | dev  |
+9ac3fe71-0000-0000-0000-b331fe9edd4b | Prod | prod |
+```
+
+### `project list` with explicit credentials
+
+Override saved config on a single call without changing the config file:
 
 ```bash
 featbit project list --host https://app-api.featbit.co --token api-xxxxx --org <organization-id>
 ```
 
-Get a project by ID:
+All business commands accept `--host`, `--token`, and `--org` as overrides.
 
-```bash
-featbit project get <project-id>
-```
+### `flag list`
 
-List feature flags in an environment:
+List feature flags in an environment (must be a valid GUID).
 
 ```bash
 featbit flag list <env-id>
 ```
 
-List all flags across pages:
+Table output columns: `Id`, `Key`, `Name`, `Enabled`, `Type`, `Tags`
+
+Example table output:
+
+```
+Id                                   | Key        | Name       | Enabled | Type    | Tags
+-------------------------------------+------------+------------+---------+---------+-------
+184da9ee-0000-0000-0000-e34f517f73b3 | my-feature | My Feature | on      | boolean | beta
+TotalCount: 1
+```
+
+#### Pagination
+
+By default the first page of 10 flags is returned. Use `--page-index` and `--page-size` to page through results:
+
+```bash
+featbit flag list <env-id> --page-index 0 --page-size 20
+featbit flag list <env-id> --page-index 1 --page-size 20
+```
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `--page-index` | `0` | Zero-based page number |
+| `--page-size` | `10` | Number of flags per page |
+
+#### Fetch all pages at once
 
 ```bash
 featbit flag list <env-id> --all
 ```
 
-Filter flags by name or key:
+Fetches every page and returns the combined result set. `TotalCount` reflects the total number of flags.
+
+#### Filter by name or key
 
 ```bash
 featbit flag list <env-id> --name my-flag
 ```
 
-Use JSON output for automation:
+Passes the value as a server-side name/key filter. Partial matches are supported.
+
+#### JSON output
+
+```bash
+featbit flag list <env-id> --json
+featbit flag list <env-id> --all --json
+```
+
+JSON shape:
+
+```json
+{
+  "success": true,
+  "errors": [],
+  "data": {
+    "totalCount": 5,
+    "items": [
+      {
+        "id": "...",
+        "name": "...",
+        "key": "...",
+        "isEnabled": true,
+        "variationType": "boolean",
+        "tags": ["beta"],
+        "createdAt": "2026-01-15T07:14:32Z",
+        "updatedAt": "2026-02-01T13:17:35Z"
+      }
+    ]
+  }
+}
+```
+
+### JSON output for project commands
 
 ```bash
 featbit project list --json
 featbit project get <project-id> --json
-featbit flag list <env-id> --json
+```
+
+All JSON responses share the same envelope:
+
+```json
+{
+  "success": true,
+  "errors": [],
+  "data": { ... }
+}
 ```
 
 ## Help
