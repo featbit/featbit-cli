@@ -7,7 +7,7 @@ applyTo: "**"
 ## Technology Stack
 
 1. Use **.NET 10** as the target framework for all projects.
-2. Use **.NET Aspire 13.1** (NuGet package `9.1.0`) only for the test host in `tests/` — not for production code.
+2. **FeatBit.Cli** is an **AOT (Ahead-of-Time compilation)** project (`<PublishAot>true</PublishAot>`). All code must be AOT-compatible: avoid reflection, dynamic types, and non-trimmer-friendly patterns.
 
 ## Documentation & Research
 
