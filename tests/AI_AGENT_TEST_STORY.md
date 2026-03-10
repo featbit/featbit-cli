@@ -28,12 +28,136 @@ The agent needs these values before running command-level cases:
 
 | Name | Description |
 | --- | --- |
-| `HOST` | FeatBit API root URL. Default is `https://app-api.featbit.co`. |
+| `HOST` | Optional FeatBit API root URL. If omitted, use CLI default `https://app-api.featbit.co`. |
 | `TOKEN` | Valid FeatBit access token. |
 | `ORG` | Valid organization ID. |
-| `PROJECT_ID` | Valid project ID for read tests. |
-| `ENV_ID` | Valid environment ID for flag list tests. |
-| `FLAG_NAME_FRAGMENT` | Optional known fragment for filtering flag list results. |
+
+The following values must be discovered dynamically by the agent during execution:
+
+| Derived Name | How to get it |
+| --- | --- |
+| `PROJECT_ID` | Pick one project from `featbit project list`. |
+| `ENV_ID` | Pick one environment from `featbit project get <PROJECT_ID>`. |
+| `FLAG_NAME_FRAGMENT` | Optional. Pick a fragment from an existing flag name or key returned by `featbit flag list <ENV_ID>`. |
+
+## End-to-End Discovery Flow (Required)
+
+The agent must execute and record this exact flow in sequence. This flow is mandatory and is part of test completion criteria.
+
+### Flow Step 1: `config init`
+
+**Command**
+
+```bash
+featbit config init
+```
+
+**Input**
+
+- `Host`: press Enter for default, or provide `HOST`
+- `Access token`: `TOKEN`
+- `Organization`: `ORG`
+
+**Expected**
+
+- Exit code is `0`
+- Output contains `Config saved to:`
+
+### Flow Step 2: `config set`
+
+**Command**
+
+```bash
+featbit config set --host ${HOST} --token ${TOKEN} --org ${ORG}
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output contains `Config saved to:`
+
+### Flow Step 3: `config show` Consistency Check
+
+**Command**
+
+```bash
+featbit config show
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output host and organization match the values provided in Steps 1-2
+- Token is masked
+
+### Flow Step 4: `project list`
+
+**Command**
+
+```bash
+featbit project list --json
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- Agent extracts one valid `PROJECT_ID` from returned data
+
+### Flow Step 5: `project get`
+
+**Command**
+
+```bash
+featbit project get ${PROJECT_ID} --json
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- Agent extracts one valid `ENV_ID` from the selected project's environments
+
+### Flow Step 6: `flag list`
+
+**Command**
+
+```bash
+featbit flag list ${ENV_ID} --all --json
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- JSON includes flag items with update timestamp fields (if available from API)
+
+### Flow Step 7: Stale Feature Flag Table
+
+**Purpose**
+Identify flags whose `updated` date is older than one month.
+
+**Rule**
+
+- Let `now` be the execution timestamp in UTC.
+- A flag is `stale feature flag` if `updated_at < now - 30 days`.
+- If an update timestamp is missing or unparsable, mark status as `unknown` and include a note.
+
+**Required output table**
+
+| project_id | env_id | flag_key | flag_name | updated_at | age_days | stale_status |
+| --- | --- | --- | --- | --- | --- | --- |
+| ... | ... | ... | ... | ... | ... | `stale` / `active` / `unknown` |
+
+## Flow Test Logging Requirements
+
+For Flow Steps 1-7, the report must include:
+
+- exact command
+- exit code
+- selected IDs (`PROJECT_ID`, `ENV_ID`) with source evidence
+- consistency check result for `config show`
+- stale table generation result and row count
 
 ## Setup
 
@@ -146,6 +270,12 @@ Verify `config set` updates individual values.
 featbit config set --host ${HOST} --token ${TOKEN} --org ${ORG}
 ```
 
+If `HOST` is not provided externally, use:
+
+```bash
+featbit config set --token ${TOKEN} --org ${ORG}
+```
+
 **Expected**
 
 - Exit code is `0`
@@ -252,6 +382,8 @@ Verify fetching a specific project by ID.
 featbit project get ${PROJECT_ID}
 ```
 
+`PROJECT_ID` must be selected from Case P2 output.
+
 **Expected**
 
 - Exit code is `0`
@@ -267,6 +399,8 @@ Verify JSON output for a specific project.
 ```bash
 featbit project get ${PROJECT_ID} --json
 ```
+
+`PROJECT_ID` must be selected from Case P2 output.
 
 **Expected**
 
@@ -285,6 +419,8 @@ Verify flag listing for an environment.
 featbit flag list ${ENV_ID}
 ```
 
+`ENV_ID` must be selected from Case P4 output.
+
 **Expected**
 
 - Exit code is `0`
@@ -301,6 +437,8 @@ Verify `--all` aggregates paged results.
 ```bash
 featbit flag list ${ENV_ID} --all
 ```
+
+`ENV_ID` must be selected from Case P4 output.
 
 **Expected**
 
@@ -319,6 +457,9 @@ Verify name/key filtering.
 featbit flag list ${ENV_ID} --name ${FLAG_NAME_FRAGMENT}
 ```
 
+`ENV_ID` must be selected from Case P4 output.
+`FLAG_NAME_FRAGMENT` should be discovered from prior flag list output.
+
 **Expected**
 
 - Exit code is `0`
@@ -334,6 +475,8 @@ Verify machine-readable JSON output for flags.
 ```bash
 featbit flag list ${ENV_ID} --json
 ```
+
+`ENV_ID` must be selected from Case P4 output.
 
 **Expected**
 
@@ -389,6 +532,14 @@ For each case, the agent should produce:
 | `observed` | Short factual summary |
 | `evidence` | Relevant output snippet |
 
+For End-to-End Discovery Flow, also include:
+
+| Field | Meaning |
+| --- | --- |
+| `flow_step` | One of `1..7` |
+| `derived_values` | Values discovered in this step (for example `PROJECT_ID`, `ENV_ID`) |
+| `stale_table_path_or_inline` | Path to generated table artifact or inline markdown table |
+
 ## Completion Criteria
 
 The test story is complete when:
@@ -398,4 +549,6 @@ The test story is complete when:
 3. Validation cases behave as documented.
 4. Project and flag commands succeed against a real environment.
 5. Negative cases produce understandable failures.
-6. The agent report is complete and reproducible.
+6. End-to-end discovery flow (Steps 1-7) is fully executed and recorded.
+7. A stale feature flag table is generated with clear `stale`/`active`/`unknown` status.
+8. The agent report is complete and reproducible.
