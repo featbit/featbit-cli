@@ -22,3 +22,13 @@ public sealed class PagedResult<T>
     [JsonPropertyName("items")]
     public List<T>? Items { get; init; }
 }
+
+public sealed class WriteResult
+{
+    public bool Success { get; init; }
+
+    /// <summary>Raw HTTP response body from the API.</summary>
+    public string? RawJson { get; init; }
+
+    public string? Error { get; init; }
+}

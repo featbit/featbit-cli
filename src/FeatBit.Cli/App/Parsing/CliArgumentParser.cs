@@ -60,6 +60,45 @@ internal static class CliArgumentParser
 
                         options.PageSize = pageSize;
                         break;
+                    case "--flag-key":
+                        options.FlagKey = optionValue;
+                        break;
+                    case "--flag-name":
+                        options.FlagName = optionValue;
+                        break;
+                    case "--description":
+                        options.Description = optionValue;
+                        break;
+                    case "--rollout":
+                        options.Rollout = optionValue;
+                        break;
+                    case "--dispatch-key":
+                        options.DispatchKey = optionValue;
+                        break;
+                    case "--user-key":
+                        options.UserKey = optionValue;
+                        break;
+                    case "--user-name":
+                        options.UserName = optionValue;
+                        break;
+                    case "--custom-props":
+                        options.CustomProperties = optionValue;
+                        break;
+                    case "--flag-keys":
+                        options.FlagKeys = optionValue;
+                        break;
+                    case "--tags":
+                        options.Tags = optionValue;
+                        break;
+                    case "--tag-filter":
+                        options.TagFilterMode = optionValue;
+                        break;
+                    case "--env-secret":
+                        options.EnvSecret = optionValue;
+                        break;
+                    case "--eval-host":
+                        options.EvalHost = optionValue;
+                        break;
                     default:
                         return ParseOutcome.Fail($"Unknown option: {current}");
                 }
@@ -134,6 +173,70 @@ internal static class CliArgumentParser
             && positional[1].Equals("init", StringComparison.OrdinalIgnoreCase))
         {
             return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigInit, null, null, options));
+        }
+
+        // flag toggle <envId> <key> <true|false>
+        if (positional.Count == 5
+            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
+            && positional[1].Equals("toggle", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(positional[2], out var envId))
+                return ParseOutcome.Fail("envId must be a valid GUID.");
+            if (!bool.TryParse(positional[4], out var status))
+                return ParseOutcome.Fail("status must be 'true' or 'false'.");
+            options.FlagKey = positional[3];
+            options.ToggleStatus = status;
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagToggle, null, envId, options));
+        }
+
+        // flag archive <envId> <key>
+        if (positional.Count == 4
+            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
+            && positional[1].Equals("archive", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(positional[2], out var envId))
+                return ParseOutcome.Fail("envId must be a valid GUID.");
+            options.FlagKey = positional[3];
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagArchive, null, envId, options));
+        }
+
+        // flag create <envId> --flag-name <name> --flag-key <key> [--description <desc>]
+        if (positional.Count == 3
+            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
+            && positional[1].Equals("create", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(positional[2], out var envId))
+                return ParseOutcome.Fail("envId must be a valid GUID.");
+            if (string.IsNullOrWhiteSpace(options.FlagName))
+                return ParseOutcome.Fail("--flag-name is required for 'flag create'.");
+            if (string.IsNullOrWhiteSpace(options.FlagKey))
+                return ParseOutcome.Fail("--flag-key is required for 'flag create'.");
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagCreate, null, envId, options));
+        }
+
+        // flag set-rollout <envId> <key> --rollout <json> [--dispatch-key <attr>]
+        if (positional.Count == 4
+            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
+            && positional[1].Equals("set-rollout", StringComparison.OrdinalIgnoreCase))
+        {
+            if (!Guid.TryParse(positional[2], out var envId))
+                return ParseOutcome.Fail("envId must be a valid GUID.");
+            if (string.IsNullOrWhiteSpace(options.Rollout))
+                return ParseOutcome.Fail("--rollout is required for 'flag set-rollout'.");
+            options.FlagKey = positional[3];
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagSetRollout, null, envId, options));
+        }
+
+        // flag evaluate --user-key <keyId> [options...]
+        if (positional.Count == 2
+            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
+            && positional[1].Equals("evaluate", StringComparison.OrdinalIgnoreCase))
+        {
+            if (string.IsNullOrWhiteSpace(options.UserKey))
+                return ParseOutcome.Fail("--user-key is required for 'flag evaluate'.");
+            if (string.IsNullOrWhiteSpace(options.EnvSecret))
+                return ParseOutcome.Fail("--env-secret is required for 'flag evaluate'.");
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagEvaluate, null, null, options));
         }
 
         return ParseOutcome.Fail("Unsupported command.");

@@ -36,6 +36,37 @@ internal static class CliApplication
             return await CliConfigCommands.ExecuteAsync(request);
         }
 
+        // FlagEvaluate uses the env secret for auth — no admin token required.
+        // Resolve only the host (eval host falls back to the main host).
+        if (request.Kind == CommandKind.FlagEvaluate)
+        {
+            var evalHost = !string.IsNullOrWhiteSpace(request.EvalHost)
+                ? request.EvalHost
+                : !string.IsNullOrWhiteSpace(request.Host)
+                    ? request.Host
+                    : Environment.GetEnvironmentVariable("FEATBIT_EVAL_HOST")
+                      ?? Environment.GetEnvironmentVariable("FEATBIT_HOST")
+                      ?? OptionResolver.DefaultHost;
+
+            using var evalHttpClient = new HttpClient();
+            // Dummy token — FeatBitClient requires it but evaluate uses X-FeatBit-Env-Secret via absolute URL.
+            IFeatBitClient evalClient = new FeatBitClient(evalHttpClient, evalHost, "dummy", null);
+            return await CommandExecutors.FlagEvaluateAsync(
+                evalClient,
+                evalHost,
+                request.EnvSecret!,
+                request.UserKey!,
+                request.UserName,
+                request.CustomProperties,
+                request.FlagKeys,
+                request.Tags,
+                request.TagFilterMode,
+                request.Json,
+                Console.Out,
+                Console.Error,
+                CancellationToken.None);
+        }
+
         ResolvedOptions resolved;
         try
         {
@@ -88,6 +119,47 @@ internal static class CliApplication
                 request.PageIndex,
                 request.PageSize,
                 request.FetchAll,
+                resolved.Json,
+                Console.Out,
+                Console.Error,
+                CancellationToken.None),
+
+            CommandKind.FlagToggle => CommandExecutors.FlagToggleAsync(
+                client,
+                request.EnvId!.Value,
+                request.FlagKey!,
+                request.ToggleStatus!.Value,
+                resolved.Json,
+                Console.Out,
+                Console.Error,
+                CancellationToken.None),
+
+            CommandKind.FlagArchive => CommandExecutors.FlagArchiveAsync(
+                client,
+                request.EnvId!.Value,
+                request.FlagKey!,
+                resolved.Json,
+                Console.Out,
+                Console.Error,
+                CancellationToken.None),
+
+            CommandKind.FlagCreate => CommandExecutors.FlagCreateAsync(
+                client,
+                request.EnvId!.Value,
+                request.FlagName!,
+                request.FlagKey!,
+                request.Description,
+                resolved.Json,
+                Console.Out,
+                Console.Error,
+                CancellationToken.None),
+
+            CommandKind.FlagSetRollout => CommandExecutors.FlagSetRolloutAsync(
+                client,
+                request.EnvId!.Value,
+                request.FlagKey!,
+                request.Rollout!,
+                request.DispatchKey,
                 resolved.Json,
                 Console.Out,
                 Console.Error,

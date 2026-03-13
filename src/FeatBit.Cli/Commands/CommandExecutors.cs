@@ -139,6 +139,207 @@ public static class CommandExecutors
         return 0;
     }
 
+    public static async Task<int> FlagToggleAsync(
+        IFeatBitClient client,
+        Guid envId,
+        string key,
+        bool status,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        var result = await client.ToggleFeatureFlagAsync(envId, key, status, cancellationToken);
+        if (!result.Success)
+        {
+            await stderr.WriteLineAsync(result.Error ?? "Unknown error.");
+            return 1;
+        }
+
+        if (asJson)
+        {
+            await stdout.WriteLineAsync(result.RawJson);
+            return 0;
+        }
+
+        await stdout.WriteLineAsync($"Feature flag '{key}' is now {(status ? "enabled" : "disabled")}.");
+        return 0;
+    }
+
+    public static async Task<int> FlagArchiveAsync(
+        IFeatBitClient client,
+        Guid envId,
+        string key,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        var result = await client.ArchiveFeatureFlagAsync(envId, key, cancellationToken);
+        if (!result.Success)
+        {
+            await stderr.WriteLineAsync(result.Error ?? "Unknown error.");
+            return 1;
+        }
+
+        if (asJson)
+        {
+            await stdout.WriteLineAsync(result.RawJson);
+            return 0;
+        }
+
+        await stdout.WriteLineAsync($"Feature flag '{key}' has been archived.");
+        return 0;
+    }
+
+    public static async Task<int> FlagCreateAsync(
+        IFeatBitClient client,
+        Guid envId,
+        string name,
+        string key,
+        string? description,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        var result = await client.CreateFeatureFlagAsync(envId, name, key, description, cancellationToken);
+        if (!result.Success)
+        {
+            await stderr.WriteLineAsync(result.Error ?? "Unknown error.");
+            return 1;
+        }
+
+        if (asJson)
+        {
+            await stdout.WriteLineAsync(result.RawJson);
+            return 0;
+        }
+
+        await stdout.WriteLineAsync($"Feature flag '{name}' (key: {key}) created successfully.");
+        return 0;
+    }
+
+    public static async Task<int> FlagSetRolloutAsync(
+        IFeatBitClient client,
+        Guid envId,
+        string key,
+        string rolloutAssignments,
+        string? dispatchKey,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        WriteResult result;
+        try
+        {
+            result = await client.UpdateFeatureFlagRolloutAsync(envId, key, rolloutAssignments, dispatchKey, cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            await stderr.WriteLineAsync($"Invalid rollout JSON: {ex.Message}");
+            return 1;
+        }
+
+        if (!result.Success)
+        {
+            await stderr.WriteLineAsync(result.Error ?? "Unknown error.");
+            return 1;
+        }
+
+        if (asJson)
+        {
+            await stdout.WriteLineAsync(result.RawJson);
+            return 0;
+        }
+
+        await stdout.WriteLineAsync($"Rollout for feature flag '{key}' updated successfully.");
+        return 0;
+    }
+
+    public static async Task<int> FlagEvaluateAsync(
+        IFeatBitClient client,
+        string evalHost,
+        string envSecret,
+        string userKeyId,
+        string? userName,
+        string? customProperties,
+        string? flagKeys,
+        string? tags,
+        string? tagFilterMode,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        var result = await client.EvaluateFeatureFlagsAsync(
+            evalHost, envSecret, userKeyId, userName, customProperties,
+            flagKeys, tags, tagFilterMode, cancellationToken);
+
+        if (!result.Success)
+        {
+            await stderr.WriteLineAsync(result.Error ?? "Unknown error.");
+            return 1;
+        }
+
+        if (asJson)
+        {
+            await stdout.WriteLineAsync(result.RawJson);
+            return 0;
+        }
+
+        // Parse raw JSON and render a table — handle both array and ApiResponse-wrapped shapes.
+        try
+        {
+            using var doc = JsonDocument.Parse(result.RawJson!);
+            var root = doc.RootElement;
+
+            JsonElement items;
+            if (root.ValueKind == JsonValueKind.Array)
+            {
+                items = root;
+            }
+            else if (root.ValueKind == JsonValueKind.Object
+                     && root.TryGetProperty("data", out var dataEl)
+                     && dataEl.ValueKind == JsonValueKind.Array)
+            {
+                items = dataEl;
+            }
+            else
+            {
+                await stdout.WriteLineAsync(result.RawJson);
+                return 0;
+            }
+
+            var rows = items.EnumerateArray()
+                .Select(el => (IReadOnlyList<string>)
+                [
+                    TryGetString(el, "key"),
+                    TryGetString(el, "variation"),
+                    TryGetString(el, "matchReason")
+                ])
+                .ToList();
+
+            if (rows.Count == 0)
+            {
+                await stdout.WriteLineAsync("No flags evaluated.");
+                return 0;
+            }
+
+            TablePrinter.Print(stdout, ["Key", "Variation", "MatchReason"], rows);
+        }
+        catch
+        {
+            await stdout.WriteLineAsync(result.RawJson);
+        }
+
+        return 0;
+    }
+
+    private static string TryGetString(JsonElement el, string property)
+        => el.TryGetProperty(property, out var val) ? val.GetString() ?? string.Empty : string.Empty;
+
     private static async Task<ApiResponse<PagedResult<FeatureFlagVm>>> GetAllFlagsAsync(
         IFeatBitClient client,
         Guid envId,
