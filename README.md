@@ -2,11 +2,12 @@
 
 `featbit-cli` is a cross-platform .NET 10 CLI for calling the FeatBit OpenAPI with an access token.
 
-The current scope focuses on three common operations:
+Supported operations:
 
 - List projects in an organization
 - Get a single project by ID
-- List feature flags in an environment
+- List, create, toggle, archive, and set rollout for feature flags
+- Evaluate feature flags for a given user
 
 It also includes user-level configuration commands so you can store your FeatBit API host, access token, and organization ID outside the repository.
 
@@ -31,6 +32,8 @@ It also includes user-level configuration commands so you can store your FeatBit
    featbit project list
    featbit project get <project-id>
    featbit flag list <env-id>
+   featbit flag toggle <env-id> <key> true
+   featbit flag evaluate --user-key <keyId> --env-secret <secret>
    ```
 
 ## Features
@@ -383,6 +386,119 @@ All JSON responses share the same envelope:
 }
 ```
 
+### `flag toggle`
+
+Enable or disable a feature flag.
+
+```bash
+featbit flag toggle <env-id> <key> true
+featbit flag toggle <env-id> <key> false
+featbit flag toggle <env-id> <key> true --json
+```
+
+Example output:
+
+```
+Feature flag 'my-feature' is now enabled.
+```
+
+### `flag archive`
+
+Archive a feature flag.
+
+```bash
+featbit flag archive <env-id> <key>
+featbit flag archive <env-id> <key> --json
+```
+
+Example output:
+
+```
+Feature flag 'my-feature' has been archived.
+```
+
+### `flag create`
+
+Create a new boolean feature flag.
+
+```bash
+featbit flag create <env-id> --flag-name <name> --flag-key <key>
+featbit flag create <env-id> --flag-name <name> --flag-key <key> --description <desc>
+featbit flag create <env-id> --flag-name <name> --flag-key <key> --json
+```
+
+| Option | Required | Description |
+| ------ | -------- | ----------- |
+| `--flag-name` | Yes | Display name of the flag |
+| `--flag-key` | Yes | Unique key for the flag |
+| `--description` | No | Optional description |
+
+Example output:
+
+```
+Feature flag 'My Feature' (key: my-feature) created successfully.
+```
+
+### `flag set-rollout`
+
+Update the rollout (percentage) assignments for a feature flag's variations.
+
+```bash
+featbit flag set-rollout <env-id> <key> --rollout '<json>'
+featbit flag set-rollout <env-id> <key> --rollout '<json>' --dispatch-key <attribute>
+featbit flag set-rollout <env-id> <key> --rollout '<json>' --json
+```
+
+The `--rollout` value is a JSON array of `{ variationId, percentage }` objects. Percentages must sum to 100.
+
+Example:
+
+```bash
+featbit flag set-rollout <env-id> my-flag --rollout '[{"variationId":"<uuid1>","percentage":70},{"variationId":"<uuid2>","percentage":30}]'
+```
+
+| Option | Required | Description |
+| ------ | -------- | ----------- |
+| `--rollout` | Yes | JSON array of variation rollout assignments |
+| `--dispatch-key` | No | User attribute used to determine bucket (default: user key) |
+
+Example output:
+
+```
+Rollout for feature flag 'my-flag' updated successfully.
+```
+
+### `flag evaluate`
+
+Evaluate feature flags for a given user against the FeatBit evaluation server.
+
+```bash
+featbit flag evaluate --user-key <keyId> --env-secret <secret>
+featbit flag evaluate --user-key <keyId> --env-secret <secret> --flag-keys flag1,flag2
+featbit flag evaluate --user-key <keyId> --env-secret <secret> --tags release --tag-filter or
+featbit flag evaluate --user-key <keyId> --env-secret <secret> --json
+```
+
+| Option | Required | Description |
+| ------ | -------- | ----------- |
+| `--user-key` | Yes | Unique identifier for the user |
+| `--env-secret` | Yes | Environment client-side SDK secret |
+| `--eval-host` | No | Evaluation server URL (defaults to management host) |
+| `--user-name` | No | Display name of the user |
+| `--custom-props` | No | JSON object of custom user attributes |
+| `--flag-keys` | No | Comma-separated list of flag keys to evaluate |
+| `--tags` | No | Comma-separated list of tags to filter flags by |
+| `--tag-filter` | No | Tag filter mode: `and` or `or` (default: `or`) |
+
+Example table output:
+
+```
+Key        | Variation | MatchReason
+-----------+-----------+------------
+my-feature | true      | TargetMatch
+beta-ui    | false     | Default
+```
+
 ## Help
 
 Show built-in help:
@@ -403,4 +519,5 @@ See:
 
 - Authentication uses the FeatBit access token format `api-<token>`.
 - If the token already includes the `api-` prefix, it is used as-is.
-- The CLI currently targets project and feature flag read operations only.
+- All `flag` write commands (`toggle`, `archive`, `create`, `set-rollout`) require a valid management API token.
+- `flag evaluate` calls the FeatBit evaluation server using the environment SDK secret, not the management API token.
