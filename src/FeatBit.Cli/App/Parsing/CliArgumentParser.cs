@@ -7,7 +7,11 @@ internal static class CliArgumentParser
     public static ParseOutcome ParseArgs(IReadOnlyList<string> args)
     {
         var options = new CliOptions();
-        var positional = new List<string>(capacity: 4);
+        var positional = new List<string>(capacity: 3);
+
+        // Named-flag equivalents of formerly positional IDs
+        Guid? envId = null;
+        Guid? projectId = null;
 
         for (var i = 0; i < args.Count; i++)
         {
@@ -20,6 +24,13 @@ internal static class CliArgumentParser
                     continue;
                 case "--json":
                     options.Json = true;
+                    continue;
+                case "--dry-run":
+                    options.DryRun = true;
+                    continue;
+                // Skip help flags — they are handled before ParseArgs is called
+                case "--help":
+                case "-h":
                     continue;
             }
 
@@ -59,6 +70,21 @@ internal static class CliArgumentParser
                         }
 
                         options.PageSize = pageSize;
+                        break;
+                    case "--env-id":
+                        if (!Guid.TryParse(optionValue, out var parsedEnvId))
+                            return ParseOutcome.Fail("--env-id must be a valid GUID.");
+                        envId = parsedEnvId;
+                        break;
+                    case "--project-id":
+                        if (!Guid.TryParse(optionValue, out var parsedProjectId))
+                            return ParseOutcome.Fail("--project-id must be a valid GUID.");
+                        projectId = parsedProjectId;
+                        break;
+                    case "--enabled":
+                        if (!bool.TryParse(optionValue, out var enabled))
+                            return ParseOutcome.Fail("--enabled must be 'true' or 'false'.");
+                        options.ToggleStatus = enabled;
                         break;
                     case "--flag-key":
                         options.FlagKey = optionValue;
@@ -109,137 +135,136 @@ internal static class CliArgumentParser
             positional.Add(current);
         }
 
-        if (positional is [var scope, var action]
-            && scope.Equals("project", StringComparison.OrdinalIgnoreCase)
-            && action.Equals("list", StringComparison.OrdinalIgnoreCase))
+        // project list
+        if (positional is ["project", "list"])
         {
             return ParseOutcome.Ok(new CommandRequest(CommandKind.ProjectList, null, null, options));
         }
 
-        if (positional.Count == 3
-            && positional[0].Equals("project", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("get", StringComparison.OrdinalIgnoreCase))
+        // project get --project-id <guid>
+        if (positional is ["project", "get"])
         {
-            if (!Guid.TryParse(positional[2], out var projectId))
-            {
-                return ParseOutcome.Fail("projectId must be a valid GUID.");
-            }
-
+            if (projectId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --project-id\n" +
+                    "  featbit project get --project-id <guid>\n" +
+                    "  Run 'featbit project list --json' to find a project ID.");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.ProjectGet, projectId, null, options));
         }
 
-        if (positional.Count == 3
-            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("list", StringComparison.OrdinalIgnoreCase))
+        // flag list --env-id <guid>
+        if (positional is ["flag", "list"])
         {
-            if (!Guid.TryParse(positional[2], out var envId))
-            {
-                return ParseOutcome.Fail("envId must be a valid GUID.");
-            }
-
+            if (envId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-id\n" +
+                    "  featbit flag list --env-id <guid>\n" +
+                    "  Run 'featbit project get --project-id <id>' to find an environment ID.");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagList, null, envId, options));
         }
 
-        if (positional.Count == 2
-            && positional[0].Equals("config", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("set", StringComparison.OrdinalIgnoreCase))
+        // flag toggle --env-id <guid> --flag-key <key> --enabled <true|false>
+        if (positional is ["flag", "toggle"])
         {
-            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigSet, null, null, options));
-        }
-
-        if (positional.Count == 2
-            && positional[0].Equals("config", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("show", StringComparison.OrdinalIgnoreCase))
-        {
-            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigShow, null, null, options));
-        }
-
-        if (positional.Count == 2
-            && positional[0].Equals("config", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("clear", StringComparison.OrdinalIgnoreCase))
-        {
-            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigClear, null, null, options));
-        }
-
-        if (positional.Count == 2
-            && positional[0].Equals("config", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("validate", StringComparison.OrdinalIgnoreCase))
-        {
-            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigValidate, null, null, options));
-        }
-
-        if (positional.Count == 2
-            && positional[0].Equals("config", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("init", StringComparison.OrdinalIgnoreCase))
-        {
-            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigInit, null, null, options));
-        }
-
-        // flag toggle <envId> <key> <true|false>
-        if (positional.Count == 5
-            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("toggle", StringComparison.OrdinalIgnoreCase))
-        {
-            if (!Guid.TryParse(positional[2], out var envId))
-                return ParseOutcome.Fail("envId must be a valid GUID.");
-            if (!bool.TryParse(positional[4], out var status))
-                return ParseOutcome.Fail("status must be 'true' or 'false'.");
-            options.FlagKey = positional[3];
-            options.ToggleStatus = status;
+            if (envId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-id\n" +
+                    "  featbit flag toggle --env-id <guid> --flag-key <key> --enabled <true|false>");
+            if (string.IsNullOrWhiteSpace(options.FlagKey))
+                return ParseOutcome.Fail(
+                    "Missing required flag: --flag-key\n" +
+                    "  featbit flag toggle --env-id <guid> --flag-key <key> --enabled <true|false>");
+            if (options.ToggleStatus is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --enabled\n" +
+                    "  featbit flag toggle --env-id <guid> --flag-key <key> --enabled <true|false>");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagToggle, null, envId, options));
         }
 
-        // flag archive <envId> <key>
-        if (positional.Count == 4
-            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("archive", StringComparison.OrdinalIgnoreCase))
+        // flag archive --env-id <guid> --flag-key <key>
+        if (positional is ["flag", "archive"])
         {
-            if (!Guid.TryParse(positional[2], out var envId))
-                return ParseOutcome.Fail("envId must be a valid GUID.");
-            options.FlagKey = positional[3];
+            if (envId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-id\n" +
+                    "  featbit flag archive --env-id <guid> --flag-key <key>");
+            if (string.IsNullOrWhiteSpace(options.FlagKey))
+                return ParseOutcome.Fail(
+                    "Missing required flag: --flag-key\n" +
+                    "  featbit flag archive --env-id <guid> --flag-key <key>");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagArchive, null, envId, options));
         }
 
-        // flag create <envId> --flag-name <name> --flag-key <key> [--description <desc>]
-        if (positional.Count == 3
-            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("create", StringComparison.OrdinalIgnoreCase))
+        // flag create --env-id <guid> --flag-name <name> --flag-key <key>
+        if (positional is ["flag", "create"])
         {
-            if (!Guid.TryParse(positional[2], out var envId))
-                return ParseOutcome.Fail("envId must be a valid GUID.");
+            if (envId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-id\n" +
+                    "  featbit flag create --env-id <guid> --flag-name <name> --flag-key <key>");
             if (string.IsNullOrWhiteSpace(options.FlagName))
-                return ParseOutcome.Fail("--flag-name is required for 'flag create'.");
+                return ParseOutcome.Fail(
+                    "Missing required flag: --flag-name\n" +
+                    "  featbit flag create --env-id <guid> --flag-name <name> --flag-key <key>");
             if (string.IsNullOrWhiteSpace(options.FlagKey))
-                return ParseOutcome.Fail("--flag-key is required for 'flag create'.");
+                return ParseOutcome.Fail(
+                    "Missing required flag: --flag-key\n" +
+                    "  featbit flag create --env-id <guid> --flag-name <name> --flag-key <key>");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagCreate, null, envId, options));
         }
 
-        // flag set-rollout <envId> <key> --rollout <json> [--dispatch-key <attr>]
-        if (positional.Count == 4
-            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("set-rollout", StringComparison.OrdinalIgnoreCase))
+        // flag set-rollout --env-id <guid> --flag-key <key> --rollout <json>
+        if (positional is ["flag", "set-rollout"])
         {
-            if (!Guid.TryParse(positional[2], out var envId))
-                return ParseOutcome.Fail("envId must be a valid GUID.");
+            if (envId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-id\n" +
+                    "  featbit flag set-rollout --env-id <guid> --flag-key <key> --rollout <json>");
+            if (string.IsNullOrWhiteSpace(options.FlagKey))
+                return ParseOutcome.Fail(
+                    "Missing required flag: --flag-key\n" +
+                    "  featbit flag set-rollout --env-id <guid> --flag-key <key> --rollout <json>");
             if (string.IsNullOrWhiteSpace(options.Rollout))
-                return ParseOutcome.Fail("--rollout is required for 'flag set-rollout'.");
-            options.FlagKey = positional[3];
+                return ParseOutcome.Fail(
+                    "Missing required flag: --rollout\n" +
+                    "  featbit flag set-rollout --env-id <guid> --flag-key <key> --rollout <json>");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagSetRollout, null, envId, options));
         }
 
-        // flag evaluate --user-key <keyId> [options...]
-        if (positional.Count == 2
-            && positional[0].Equals("flag", StringComparison.OrdinalIgnoreCase)
-            && positional[1].Equals("evaluate", StringComparison.OrdinalIgnoreCase))
+        // flag evaluate --user-key <key> --env-secret <secret>
+        if (positional is ["flag", "evaluate"])
         {
             if (string.IsNullOrWhiteSpace(options.UserKey))
-                return ParseOutcome.Fail("--user-key is required for 'flag evaluate'.");
+                return ParseOutcome.Fail(
+                    "Missing required flag: --user-key\n" +
+                    "  featbit flag evaluate --user-key <key> --env-secret <secret>");
             if (string.IsNullOrWhiteSpace(options.EnvSecret))
-                return ParseOutcome.Fail("--env-secret is required for 'flag evaluate'.");
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-secret\n" +
+                    "  featbit flag evaluate --user-key <key> --env-secret <secret>");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagEvaluate, null, null, options));
         }
 
-        return ParseOutcome.Fail("Unsupported command.");
+        // config commands
+        if (positional is ["config", "set"])
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigSet, null, null, options));
+
+        if (positional is ["config", "show"])
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigShow, null, null, options));
+
+        if (positional is ["config", "clear"])
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigClear, null, null, options));
+
+        if (positional is ["config", "validate"])
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigValidate, null, null, options));
+
+        if (positional is ["config", "init"])
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.ConfigInit, null, null, options));
+
+        return ParseOutcome.Fail(
+            positional.Count == 0
+                ? "No command specified. Run 'featbit --help' for usage."
+                : $"Unknown command: {string.Join(" ", positional)}. Run 'featbit --help' for usage.");
     }
 
     private static bool TryReadOptionValue(

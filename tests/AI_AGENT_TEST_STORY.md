@@ -109,7 +109,7 @@ featbit project list --json
 **Command**
 
 ```bash
-featbit project get ${PROJECT_ID} --json
+featbit project get --project-id ${PROJECT_ID} --json
 ```
 
 **Expected**
@@ -123,7 +123,7 @@ featbit project get ${PROJECT_ID} --json
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID} --all --json
+featbit flag list --env-id ${ENV_ID} --all --json
 ```
 
 **Expected**

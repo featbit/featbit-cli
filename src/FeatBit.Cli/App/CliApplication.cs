@@ -16,17 +16,46 @@ internal static class CliApplication
 
     public static async Task<int> RunAsync(string[] args)
     {
-        if (args.Length == 0 || args.Any(static x => x is "--help" or "-h"))
+        // No args → global help
+        if (args.Length == 0)
         {
-            CliHelpPrinter.Print();
+            CliHelpPrinter.PrintGlobal();
+            return ExitCodeSuccess;
+        }
+
+        // Scoped help: intercept --help / -h at any position
+        if (args.Any(static x => x is "--help" or "-h"))
+        {
+            var nonHelpArgs = args.Where(static x => x is not "--help" and not "-h").ToArray();
+            switch (nonHelpArgs)
+            {
+                case []:
+                    CliHelpPrinter.PrintGlobal();
+                    break;
+                case [var resource]:
+                    CliHelpPrinter.PrintResourceHelp(resource);
+                    break;
+                case [var resource, var command]:
+                    CliHelpPrinter.PrintCommandHelp(resource, command);
+                    break;
+                default:
+                    CliHelpPrinter.PrintGlobal();
+                    break;
+            }
+            return ExitCodeSuccess;
+        }
+
+        // Resource with no subcommand → show resource help
+        if (args.Length == 1 && args[0] is "flag" or "project" or "config")
+        {
+            CliHelpPrinter.PrintResourceHelp(args[0]);
             return ExitCodeSuccess;
         }
 
         var parseResult = CliArgumentParser.ParseArgs(args);
         if (!parseResult.Success)
         {
-            Console.Error.WriteLine(parseResult.Error);
-            CliHelpPrinter.Print();
+            Console.Error.WriteLine($"Error: {parseResult.Error}");
             return ExitCodeGeneralFailure;
         }
 
@@ -129,6 +158,7 @@ internal static class CliApplication
                 request.EnvId!.Value,
                 request.FlagKey!,
                 request.ToggleStatus!.Value,
+                request.DryRun,
                 resolved.Json,
                 Console.Out,
                 Console.Error,
@@ -138,6 +168,7 @@ internal static class CliApplication
                 client,
                 request.EnvId!.Value,
                 request.FlagKey!,
+                request.DryRun,
                 resolved.Json,
                 Console.Out,
                 Console.Error,

@@ -90,6 +90,13 @@ internal static class CliConfigCommands
 
     private static int ExecuteConfigInit()
     {
+        if (Console.IsInputRedirected)
+        {
+            Console.Error.WriteLine("Error: 'config init' requires an interactive terminal.");
+            Console.Error.WriteLine("  Use 'featbit config set --host <url> --token <token> --org <orgId>' for non-interactive configuration.");
+            return CliApplication.ExitCodeGeneralFailure;
+        }
+
         var config = UserConfigStore.Load();
 
         Console.WriteLine("Initialize FeatBit CLI user config");

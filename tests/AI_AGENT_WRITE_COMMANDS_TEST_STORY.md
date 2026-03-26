@@ -56,7 +56,7 @@ Obtain the environment ID required by all flag write commands.
 
 ```bash
 featbit project list --json
-featbit project get <PROJECT_ID> --json
+featbit project get --project-id <PROJECT_ID> --json
 ```
 
 **Expected**
@@ -79,7 +79,7 @@ Create a new boolean feature flag that will be used throughout the remaining ste
 **Command**
 
 ```bash
-featbit flag create ${ENV_ID} \
+featbit flag create --env-id ${ENV_ID} \
   --flag-name "CLI E2E Test Flag" \
   --flag-key ${TEST_FLAG_KEY} \
   --description "Created by AI agent write-command e2e test" \
@@ -107,7 +107,7 @@ Verify the newly created flag is visible in `flag list` output.
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID} --name ${TEST_FLAG_KEY}
+featbit flag list --env-id ${ENV_ID} --name ${TEST_FLAG_KEY}
 ```
 
 **Expected**
@@ -126,7 +126,7 @@ Enable the newly created flag.
 **Command**
 
 ```bash
-featbit flag toggle ${ENV_ID} ${TEST_FLAG_KEY} true
+featbit flag toggle --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --enabled true
 ```
 
 **Expected**
@@ -144,7 +144,7 @@ Disable the flag to verify the toggle works in both directions.
 **Command**
 
 ```bash
-featbit flag toggle ${ENV_ID} ${TEST_FLAG_KEY} false
+featbit flag toggle --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --enabled false
 ```
 
 **Expected**
@@ -162,7 +162,7 @@ Update the flag's default rollout (fallthrough) so that 70 % of traffic receives
 **Command**
 
 ```bash
-featbit flag set-rollout ${ENV_ID} ${TEST_FLAG_KEY} \
+featbit flag set-rollout --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} \
   --rollout "[{\"variationId\":\"${VARIATION_ID_TRUE}\",\"percentage\":70},{\"variationId\":\"${VARIATION_ID_FALSE}\",\"percentage\":30}]"
 ```
 
@@ -181,7 +181,7 @@ The evaluation endpoint returns the flag's served variation only when the flag i
 **Command**
 
 ```bash
-featbit flag toggle ${ENV_ID} ${TEST_FLAG_KEY} true
+featbit flag toggle --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --enabled true
 ```
 
 **Expected**
@@ -225,7 +225,7 @@ Archive the test flag to clean up after the test run.
 **Command**
 
 ```bash
-featbit flag archive ${ENV_ID} ${TEST_FLAG_KEY}
+featbit flag archive --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY}
 ```
 
 **Expected**
@@ -241,7 +241,7 @@ Archived flags must not appear in the default (non-archived) flag listing.
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID} --name ${TEST_FLAG_KEY}
+featbit flag list --env-id ${ENV_ID} --name ${TEST_FLAG_KEY}
 ```
 
 **Expected**
@@ -261,7 +261,7 @@ Verify the non-JSON output path for flag creation.
 **Command**
 
 ```bash
-featbit flag create ${ENV_ID} \
+featbit flag create --env-id ${ENV_ID} \
   --flag-name "CLI Human Output Test" \
   --flag-key cli-human-test-$(date +%s)
 ```
@@ -284,7 +284,7 @@ Verify `--json` flag works for toggle.
 **Command**
 
 ```bash
-featbit flag toggle ${ENV_ID} ${TEST_FLAG_KEY} true --json
+featbit flag toggle --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --enabled true --json
 ```
 
 Run this before Flow Step 9 (archiving).
@@ -304,7 +304,7 @@ Verify consistent bucketing by a user attribute is accepted.
 **Command**
 
 ```bash
-featbit flag set-rollout ${ENV_ID} ${TEST_FLAG_KEY} \
+featbit flag set-rollout --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} \
   --rollout "[{\"variationId\":\"${VARIATION_ID_TRUE}\",\"percentage\":50},{\"variationId\":\"${VARIATION_ID_FALSE}\",\"percentage\":50}]" \
   --dispatch-key "email"
 ```
@@ -377,7 +377,7 @@ This must run **as part of Flow Step 9 or after creating a separate disposable f
 **Command**
 
 ```bash
-featbit flag archive ${ENV_ID} ${TEST_FLAG_KEY} --json
+featbit flag archive --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --json
 ```
 
 **Expected**
@@ -397,32 +397,32 @@ Verify the parser rejects status values that are neither `true` nor `false`.
 **Command**
 
 ```bash
-featbit flag toggle ${ENV_ID} ${TEST_FLAG_KEY} yes
+featbit flag toggle --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --enabled yes
 ```
 
 **Expected**
 
 - Exit code is non-zero.
-- Output explains that status must be `'true'` or `'false'`.
+- Output explains that `--enabled` must be `'true'` or `'false'`.
 - No API call is made.
 
 ---
 
-### Case N4: `flag toggle` — Invalid `envId`
+### Case N4: `flag toggle` — Invalid `--env-id`
 
 **Purpose**
-Verify GUID validation for `envId`.
+Verify GUID validation for `--env-id`.
 
 **Command**
 
 ```bash
-featbit flag toggle not-a-guid my-flag true
+featbit flag toggle --env-id not-a-guid --flag-key my-flag --enabled true
 ```
 
 **Expected**
 
 - Exit code is non-zero.
-- Output explains that `envId` must be a valid GUID.
+- Output explains that `--env-id` must be a valid GUID.
 
 ---
 
@@ -434,7 +434,7 @@ Verify required option validation for flag creation.
 **Command**
 
 ```bash
-featbit flag create ${ENV_ID} --flag-key orphan-key
+featbit flag create --env-id ${ENV_ID} --flag-key orphan-key
 ```
 
 **Expected**
@@ -452,7 +452,7 @@ Verify required option validation for flag creation.
 **Command**
 
 ```bash
-featbit flag create ${ENV_ID} --flag-name "Orphan Flag"
+featbit flag create --env-id ${ENV_ID} --flag-name "Orphan Flag"
 ```
 
 **Expected**
@@ -470,7 +470,7 @@ Verify client-side validation rejects rollout assignments that do not sum to 100
 **Command**
 
 ```bash
-featbit flag set-rollout ${ENV_ID} ${TEST_FLAG_KEY} \
+featbit flag set-rollout --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} \
   --rollout "[{\"variationId\":\"${VARIATION_ID_TRUE}\",\"percentage\":60},{\"variationId\":\"${VARIATION_ID_FALSE}\",\"percentage\":20}]"
 ```
 
@@ -490,7 +490,7 @@ Verify that `--rollout` is required.
 **Command**
 
 ```bash
-featbit flag set-rollout ${ENV_ID} ${TEST_FLAG_KEY}
+featbit flag set-rollout --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY}
 ```
 
 **Expected**

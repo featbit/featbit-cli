@@ -35,6 +35,8 @@ internal sealed class CliOptions
 
     public bool Json { get; set; }
 
+    public bool DryRun { get; set; }
+
     // flag write commands
     public string? FlagKey { get; set; }
 
@@ -111,6 +113,8 @@ internal sealed record CommandRequest(CommandKind Kind, Guid? ProjectId, Guid? E
     public string? EnvSecret => Options.EnvSecret;
 
     public string? EvalHost => Options.EvalHost;
+
+    public bool DryRun => Options.DryRun;
 }
 
 internal readonly record struct ParseOutcome(bool Success, CommandRequest? Value, string? Error)

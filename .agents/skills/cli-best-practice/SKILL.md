@@ -39,7 +39,7 @@ def cli_best_practice(target):
     if mode == "review":
         # Walk every subcommand against the Evaluation Checklist
         findings = run_checklist(target)           # 15 checks, pass / fail / warn
-        antipatterns = flag_antipatterns(target)   # Anti-Patterns table
+        antipatterns = detect_antipatterns(target) # Anti-Patterns table
         report_findings(findings, antipatterns)    # grouped by severity
         return findings_report(target)
 
@@ -106,8 +106,9 @@ Descriptions tell an agent what a flag does. Examples show an agent how to combi
 
 ```
 Options:
-  --flag1   Description (type, default if any)
-  --flag2   Description
+  --env     Target environment (staging, production)
+  --tag     Image tag (default: latest)
+  --force   Skip confirmation
 
 Examples:
   mycli deploy --env staging
@@ -185,7 +186,7 @@ Agents retry on timeouts and transient failures. Running the same command twice 
 **Example output for a no-op retry**
 
 ```
-flag 'my-feature' already exists — no changes made.
+service 'my-service' already exists — no changes made.
 ```
 
 ---
@@ -242,8 +243,8 @@ Once an agent learns one command pattern, it predicts others. Inconsistency forc
 
 | Pattern | Example |
 |---|---|
-| `<resource> <verb>` (preferred) | `mycli flag list`, `mycli flag create`, `mycli flag delete` |
-| `<verb> <resource>` | `mycli list flag`, `mycli create flag` |
+| `<resource> <verb>` (preferred) | `mycli service list` → `mycli deploy list` → `mycli config list` |
+| `<verb> <resource>` | `mycli list service`, `mycli create service` |
 
 **Rules**
 

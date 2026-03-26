@@ -144,11 +144,19 @@ public static class CommandExecutors
         Guid envId,
         string key,
         bool status,
+        bool dryRun,
         bool asJson,
         TextWriter stdout,
         TextWriter stderr,
         CancellationToken cancellationToken)
     {
+        if (dryRun)
+        {
+            await stdout.WriteLineAsync($"Would {(status ? "enable" : "disable")} feature flag '{key}'.");
+            await stdout.WriteLineAsync("No changes made.");
+            return 0;
+        }
+
         var result = await client.ToggleFeatureFlagAsync(envId, key, status, cancellationToken);
         if (!result.Success)
         {
@@ -170,11 +178,19 @@ public static class CommandExecutors
         IFeatBitClient client,
         Guid envId,
         string key,
+        bool dryRun,
         bool asJson,
         TextWriter stdout,
         TextWriter stderr,
         CancellationToken cancellationToken)
     {
+        if (dryRun)
+        {
+            await stdout.WriteLineAsync($"Would archive feature flag '{key}'.");
+            await stdout.WriteLineAsync("No changes made.");
+            return 0;
+        }
+
         var result = await client.ArchiveFeatureFlagAsync(envId, key, cancellationToken);
         if (!result.Success)
         {
