@@ -91,6 +91,7 @@ public static class CommandExecutors
         IFeatBitClient client,
         Guid envId,
         string? name,
+        string? tags,
         int pageIndex,
         int pageSize,
         bool fetchAll,
@@ -103,11 +104,11 @@ public static class CommandExecutors
 
         if (!fetchAll)
         {
-            response = await client.GetFeatureFlagsAsync(envId, new FeatureFlagQuery(name, pageIndex, pageSize), cancellationToken);
+            response = await client.GetFeatureFlagsAsync(envId, new FeatureFlagQuery(name, tags, pageIndex, pageSize), cancellationToken);
         }
         else
         {
-            response = await GetAllFlagsAsync(client, envId, name, pageIndex, pageSize, cancellationToken);
+            response = await GetAllFlagsAsync(client, envId, name, tags, pageIndex, pageSize, cancellationToken);
         }
 
         if (!TryGetData(response, stderr, out var pagedFlags))
@@ -136,6 +137,170 @@ public static class CommandExecutors
 
         TablePrinter.Print(stdout, ["Id", "Key", "Name", "Enabled", "Type", "Tags"], rows);
         await stdout.WriteLineAsync($"TotalCount: {pagedFlags.TotalCount}");
+        return 0;
+    }
+
+    public static async Task<int> ProjectFlagsAsync(
+        IFeatBitClient client,
+        Guid projectId,
+        string? name,
+        string? tags,
+        int pageIndex,
+        int pageSize,
+        bool fetchAll,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        var projectResponse = await client.GetProjectAsync(projectId, cancellationToken);
+        if (!TryGetData(projectResponse, stderr, out var project))
+        {
+            return 1;
+        }
+
+        var envs = project.Environments ?? [];
+        var envResults = new List<ProjectEnvironmentFeatureFlags>(envs.Count);
+        foreach (var env in envs)
+        {
+            var flagsResponse = fetchAll
+                ? await GetAllFlagsAsync(client, env.Id, name, tags, pageIndex, pageSize, cancellationToken)
+                : await client.GetFeatureFlagsAsync(env.Id, new FeatureFlagQuery(name, tags, pageIndex, pageSize), cancellationToken);
+
+            if (!TryGetData(flagsResponse, stderr, out var pagedFlags))
+            {
+                return 1;
+            }
+
+            envResults.Add(new ProjectEnvironmentFeatureFlags
+            {
+                EnvId = env.Id,
+                EnvName = env.Name,
+                EnvKey = env.Key,
+                TotalCount = pagedFlags.TotalCount,
+                Items = pagedFlags.Items ?? []
+            });
+        }
+
+        var response = new ApiResponse<ProjectFeatureFlags>
+        {
+            Success = true,
+            Data = new ProjectFeatureFlags
+            {
+                ProjectId = project.Id,
+                ProjectName = project.Name,
+                ProjectKey = project.Key,
+                Environments = envResults
+            }
+        };
+
+        if (asJson)
+        {
+            await WriteJsonAsync(stdout, response, FeatBitJsonContext.Default.ApiResponseProjectFeatureFlags);
+            return 0;
+        }
+
+        await stdout.WriteLineAsync($"Project: {project.Name} ({project.Key})");
+        await stdout.WriteLineAsync($"Id: {project.Id}");
+        await stdout.WriteLineAsync();
+
+        var rows = envResults
+            .SelectMany(env => (env.Items ?? []).Select(flag => (IReadOnlyList<string>)
+            [
+                env.EnvId.ToString(),
+                env.EnvKey ?? string.Empty,
+                flag.Id.ToString(),
+                flag.Key ?? string.Empty,
+                flag.Name ?? string.Empty,
+                flag.IsEnabled ? "on" : "off",
+                flag.VariationType ?? string.Empty,
+                flag.Tags is { Count: > 0 } ? string.Join(',', flag.Tags) : string.Empty
+            ]))
+            .ToList();
+
+        if (rows.Count == 0)
+        {
+            await stdout.WriteLineAsync("No feature flags found.");
+            return 0;
+        }
+
+        TablePrinter.Print(stdout, ["EnvId", "EnvKey", "FlagId", "Key", "Name", "Enabled", "Type", "Tags"], rows);
+        await stdout.WriteLineAsync($"EnvironmentCount: {envResults.Count}");
+        await stdout.WriteLineAsync($"TotalCount: {envResults.Sum(env => env.TotalCount)}");
+        return 0;
+    }
+
+    public static async Task<int> FlagAuditLogsAsync(
+        IFeatBitClient client,
+        Guid envId,
+        Guid? flagId,
+        string? flagKey,
+        string? query,
+        Guid? creatorId,
+        long? from,
+        long? to,
+        bool crossEnvironment,
+        int pageIndex,
+        int pageSize,
+        bool fetchAll,
+        bool asJson,
+        TextWriter stdout,
+        TextWriter stderr,
+        CancellationToken cancellationToken)
+    {
+        var refId = flagId?.ToString();
+        if (string.IsNullOrWhiteSpace(refId) && !string.IsNullOrWhiteSpace(flagKey))
+        {
+            var flagResponse = await client.GetFeatureFlagAsync(envId, flagKey, cancellationToken);
+            if (!TryGetData(flagResponse, stderr, out var flag))
+            {
+                return 1;
+            }
+
+            refId = flag.Id.ToString();
+        }
+
+        var auditQuery = new AuditLogQuery(
+            query,
+            creatorId,
+            refId,
+            "FeatureFlag",
+            from,
+            to,
+            crossEnvironment,
+            pageIndex,
+            pageSize);
+
+        var response = fetchAll
+            ? await GetAllAuditLogsAsync(client, envId, auditQuery, cancellationToken)
+            : await client.GetAuditLogsAsync(envId, auditQuery, cancellationToken);
+
+        if (!TryGetData(response, stderr, out var pagedLogs))
+        {
+            return 1;
+        }
+
+        if (asJson)
+        {
+            await WriteJsonAsync(stdout, response, FeatBitJsonContext.Default.ApiResponsePagedResultAuditLogVm);
+            return 0;
+        }
+
+        var items = pagedLogs.Items ?? [];
+        var rows = items
+            .Select(log => (IReadOnlyList<string>)
+            [
+                log.CreatedAt == default ? string.Empty : log.CreatedAt.ToString("u"),
+                log.Operation ?? string.Empty,
+                log.RefType ?? string.Empty,
+                log.RefId ?? string.Empty,
+                log.CreatorName ?? log.CreatorEmail ?? log.CreatorId.ToString(),
+                log.Comment ?? string.Empty
+            ])
+            .ToList();
+
+        TablePrinter.Print(stdout, ["CreatedAt", "Operation", "RefType", "RefId", "Creator", "Comment"], rows);
+        await stdout.WriteLineAsync($"TotalCount: {pagedLogs.TotalCount}");
         return 0;
     }
 
@@ -214,12 +379,13 @@ public static class CommandExecutors
         string name,
         string key,
         string? description,
+        string? tags,
         bool asJson,
         TextWriter stdout,
         TextWriter stderr,
         CancellationToken cancellationToken)
     {
-        var result = await client.CreateFeatureFlagAsync(envId, name, key, description, cancellationToken);
+        var result = await client.CreateFeatureFlagAsync(envId, name, key, description, tags, cancellationToken);
         if (!result.Success)
         {
             await stderr.WriteLineAsync(result.Error ?? "Unknown error.");
@@ -360,6 +526,7 @@ public static class CommandExecutors
         IFeatBitClient client,
         Guid envId,
         string? name,
+        string? tags,
         int pageIndex,
         int pageSize,
         CancellationToken cancellationToken)
@@ -370,7 +537,7 @@ public static class CommandExecutors
 
         while (true)
         {
-            var response = await client.GetFeatureFlagsAsync(envId, new FeatureFlagQuery(name, cursor, pageSize), cancellationToken);
+            var response = await client.GetFeatureFlagsAsync(envId, new FeatureFlagQuery(name, tags, cursor, pageSize), cancellationToken);
             if (!response.Success || response.Data is null)
             {
                 return response;
@@ -397,6 +564,56 @@ public static class CommandExecutors
         {
             Success = true,
             Data = new PagedResult<FeatureFlagVm>
+            {
+                TotalCount = totalCount,
+                Items = items
+            }
+        };
+    }
+
+    private static async Task<ApiResponse<PagedResult<AuditLogVm>>> GetAllAuditLogsAsync(
+        IFeatBitClient client,
+        Guid envId,
+        AuditLogQuery query,
+        CancellationToken cancellationToken)
+    {
+        var cursor = query.PageIndex;
+        var items = new List<AuditLogVm>();
+        long totalCount = 0;
+
+        while (true)
+        {
+            var response = await client.GetAuditLogsAsync(
+                envId,
+                query with { PageIndex = cursor },
+                cancellationToken);
+
+            if (!response.Success || response.Data is null)
+            {
+                return response;
+            }
+
+            totalCount = response.Data.TotalCount;
+            var pageItems = response.Data.Items ?? [];
+            items.AddRange(pageItems);
+
+            if (pageItems.Count == 0)
+            {
+                break;
+            }
+
+            if (totalCount > 0 && items.Count >= totalCount)
+            {
+                break;
+            }
+
+            cursor++;
+        }
+
+        return new ApiResponse<PagedResult<AuditLogVm>>
+        {
+            Success = true,
+            Data = new PagedResult<AuditLogVm>
             {
                 TotalCount = totalCount,
                 Items = items

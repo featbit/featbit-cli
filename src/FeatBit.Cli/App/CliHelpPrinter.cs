@@ -56,6 +56,7 @@ internal static class CliHelpPrinter
         Console.WriteLine();
         Console.WriteLine("Commands:");
         Console.WriteLine($"{Indent}list        List feature flags in an environment");
+        Console.WriteLine($"{Indent}audit-logs  List audit logs for a feature flag");
         Console.WriteLine($"{Indent}create      Create a new feature flag");
         Console.WriteLine($"{Indent}toggle      Enable or disable a feature flag");
         Console.WriteLine($"{Indent}archive     Archive a feature flag");
@@ -75,6 +76,7 @@ internal static class CliHelpPrinter
         Console.WriteLine("Commands:");
         Console.WriteLine($"{Indent}list   List all accessible projects");
         Console.WriteLine($"{Indent}get    Get project details and environments");
+        Console.WriteLine($"{Indent}flags  List feature flags across all environments in a project");
         Console.WriteLine();
         Console.WriteLine("Run 'featbit project <command> --help' for flags and examples.");
     }
@@ -104,6 +106,7 @@ internal static class CliHelpPrinter
         switch (key)
         {
             case "flag list":       PrintFlagListHelp();       break;
+            case "flag audit-logs": PrintFlagAuditLogsHelp();  break;
             case "flag create":     PrintFlagCreateHelp();     break;
             case "flag toggle":     PrintFlagToggleHelp();     break;
             case "flag archive":    PrintFlagArchiveHelp();    break;
@@ -111,6 +114,7 @@ internal static class CliHelpPrinter
             case "flag evaluate":   PrintFlagEvaluateHelp();   break;
             case "project list":    PrintProjectListHelp();    break;
             case "project get":     PrintProjectGetHelp();     break;
+            case "project flags":   PrintProjectFlagsHelp();   break;
             case "config init":     PrintConfigInitHelp();     break;
             case "config set":      PrintConfigSetHelp();      break;
             case "config show":     PrintConfigShowHelp();     break;
@@ -118,6 +122,31 @@ internal static class CliHelpPrinter
             case "config clear":    PrintConfigClearHelp();    break;
             default:                PrintResourceHelp(resource); break;
         }
+    }
+
+    // project flags
+    public static void PrintProjectFlagsHelp()
+    {
+        Console.WriteLine("List feature flags across all environments in a project.");
+        Console.WriteLine();
+        Console.WriteLine("Usage:");
+        Console.WriteLine($"{Indent}featbit project flags --project-id <guid> [flags]");
+        Console.WriteLine();
+        Console.WriteLine("Flags:");
+        Console.WriteLine($"{Indent}--project-id <guid>  Project ID (required)");
+        Console.WriteLine($"{Indent}--name <string>      Filter by flag name or key fragment");
+        Console.WriteLine($"{Indent}--tags <tags>        Filter by comma-separated complete tag names");
+        Console.WriteLine($"{Indent}--page-index <int>   Page index per environment, 0-based (default: 0)");
+        Console.WriteLine($"{Indent}--page-size <int>    Items per page per environment (default: 10)");
+        Console.WriteLine($"{Indent}--all                Fetch all pages for each environment");
+        Console.WriteLine($"{Indent}--json               Output as JSON");
+        Console.WriteLine($"{Indent}--host <url>         API host (overrides config)");
+        Console.WriteLine($"{Indent}--token <token>      Access token (overrides config)");
+        Console.WriteLine($"{Indent}--org <orgId>        Organization ID (overrides config)");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.WriteLine($"{Indent}featbit project flags --project-id {ExampleGuid} --all");
+        Console.WriteLine($"{Indent}featbit project flags --project-id {ExampleGuid} --tags cli,e2e --all --json");
     }
 
     // flag list
@@ -131,6 +160,7 @@ internal static class CliHelpPrinter
         Console.WriteLine("Flags:");
         Console.WriteLine($"{Indent}--env-id <guid>     Environment ID (required)");
         Console.WriteLine($"{Indent}--name <string>     Filter by name or key fragment");
+        Console.WriteLine($"{Indent}--tags <tags>       Filter by comma-separated complete tag names");
         Console.WriteLine($"{Indent}--page-index <int>  Page index, 0-based (default: 0)");
         Console.WriteLine($"{Indent}--page-size <int>   Items per page (default: 10)");
         Console.WriteLine($"{Indent}--all               Fetch all pages");
@@ -141,7 +171,37 @@ internal static class CliHelpPrinter
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine($"{Indent}featbit flag list --env-id {ExampleGuid}");
-        Console.WriteLine($"{Indent}featbit flag list --env-id {ExampleGuid} --name my-flag --all --json");
+        Console.WriteLine($"{Indent}featbit flag list --env-id {ExampleGuid} --tags cli,e2e --all --json");
+    }
+
+    // flag audit-logs
+    public static void PrintFlagAuditLogsHelp()
+    {
+        Console.WriteLine("List audit logs for a feature flag.");
+        Console.WriteLine();
+        Console.WriteLine("Usage:");
+        Console.WriteLine($"{Indent}featbit flag audit-logs --env-id <guid> (--flag-id <guid> | --flag-key <key>) [flags]");
+        Console.WriteLine();
+        Console.WriteLine("Flags:");
+        Console.WriteLine($"{Indent}--env-id <guid>          Environment ID (required)");
+        Console.WriteLine($"{Indent}--flag-id <guid>         Feature flag ID");
+        Console.WriteLine($"{Indent}--flag-key <string>      Feature flag key; used to resolve the flag ID");
+        Console.WriteLine($"{Indent}--query <string>         Filter by keyword or comment fragment");
+        Console.WriteLine($"{Indent}--creator-id <guid>      Filter by audit log creator ID");
+        Console.WriteLine($"{Indent}--from <ms>              Start created-at time as unix milliseconds");
+        Console.WriteLine($"{Indent}--to <ms>                End created-at time as unix milliseconds");
+        Console.WriteLine($"{Indent}--cross-environment      Query across environments");
+        Console.WriteLine($"{Indent}--page-index <int>       Page index, 0-based (default: 0)");
+        Console.WriteLine($"{Indent}--page-size <int>        Items per page (default: 10)");
+        Console.WriteLine($"{Indent}--all                    Fetch all pages");
+        Console.WriteLine($"{Indent}--json                   Output as JSON");
+        Console.WriteLine($"{Indent}--host <url>             API host (overrides config)");
+        Console.WriteLine($"{Indent}--token <token>          Access token (overrides config)");
+        Console.WriteLine($"{Indent}--org <orgId>            Organization ID (overrides config)");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.WriteLine($"{Indent}featbit flag audit-logs --env-id {ExampleGuid} --flag-key my-flag --all");
+        Console.WriteLine($"{Indent}featbit flag audit-logs --env-id {ExampleGuid} --flag-id {ExampleGuid} --page-size 20 --json");
     }
 
     // flag create
@@ -157,6 +217,7 @@ internal static class CliHelpPrinter
         Console.WriteLine($"{Indent}--flag-name <string>     Display name of the flag (required)");
         Console.WriteLine($"{Indent}--flag-key <string>      Unique key of the flag (required)");
         Console.WriteLine($"{Indent}--description <string>   Optional description");
+        Console.WriteLine($"{Indent}--tags <tags>            Optional comma-separated tags");
         Console.WriteLine($"{Indent}--json                   Output as JSON");
         Console.WriteLine($"{Indent}--host <url>             API host (overrides config)");
         Console.WriteLine($"{Indent}--token <token>          Access token (overrides config)");
@@ -164,7 +225,7 @@ internal static class CliHelpPrinter
         Console.WriteLine();
         Console.WriteLine("Examples:");
         Console.WriteLine($"{Indent}featbit flag create --env-id {ExampleGuid} --flag-name \"My Flag\" --flag-key my-flag");
-        Console.WriteLine($"{Indent}featbit flag create --env-id {ExampleGuid} --flag-name \"My Flag\" --flag-key my-flag --description \"A test flag\" --json");
+        Console.WriteLine($"{Indent}featbit flag create --env-id {ExampleGuid} --flag-name \"My Flag\" --flag-key my-flag --tags cli,e2e --json");
     }
 
     // flag toggle

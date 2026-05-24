@@ -22,26 +22,56 @@ Prove that `featbit-cli` can safely and correctly:
 5. Stop only when a blocking failure makes later cases meaningless.
 6. Prefer running the built CLI exactly as an end user would.
 
+## Dedicated Test Project
+
+All live write tests must use the dedicated FeatBit test project:
+
+| Name | Value |
+| --- | --- |
+| `PROJECT_KEY` | `featbit-cli-testing` |
+| `PROJECT_ID` | local/runtime only; do not commit or report the value |
+| `HOST` | `https://app-api.featbit.co` |
+| `EVAL_HOST` | `https://app-eval.featbit.co` |
+
+The test access token is stored in local CLI config and must not be written into this file or any test report.
+
+## Report Artifact
+
+Every execution of this story must create a Markdown report under `tests/reports/`.
+
+Minimum report sections:
+
+- Summary
+- Environment and sanitized configuration
+- Commands executed
+- Write-flow results
+- Derived IDs
+- Cleanup status
+- Blocked cases
+- Evidence snippets
+
+Never include the full access token, environment secret, or Authorization header.
+
 ## Shared Inputs
 
 These must be supplied before execution begins:
 
 | Name | Description |
 | --- | --- |
-| `HOST` | Optional FeatBit API root URL. Omit to use CLI default (`https://app-api.featbit.co`). |
-| `TOKEN` | Valid FeatBit access token. |
-| `ORG` | Valid organization ID. |
+| `HOST` | FeatBit API root URL. Use `https://app-api.featbit.co`. |
+| `TOKEN` | Valid test access token stored in local CLI config. Do not write it into the report. |
+| `ORG` | Valid organization ID stored in local CLI config. |
 | `ENV_SECRET` | Environment secret key (`X-FeatBit-Env-Secret`) for the target environment. Required for `flag evaluate`. Find it in the FeatBit console → Project → Environments → Client Key or Server Key. |
 
 The following values must be discovered dynamically by the agent:
 
 | Derived Name | How to get it |
 | --- | --- |
-| `ENV_ID` | Pick one environment from `featbit project get <PROJECT_ID> --json`. Same as in the prerequisite story. |
+| `ENV_ID` | Pick one environment from `featbit project get --project-id <redacted-project-id> --json`. |
 | `TEST_FLAG_KEY` | Generate a key the agent has not seen before, e.g. `cli-e2e-<yyyyMMdd-HHmmss>`. This key is used throughout the write flow and must remain consistent for the full run. |
 | `VARIATION_ID_TRUE` | Extract from the JSON response of `flag create --json`. The variation whose `value` is `"true"`. |
 | `VARIATION_ID_FALSE` | Extract from the JSON response of `flag create --json`. The variation whose `value` is `"false"`. |
-| `EVAL_HOST` | Optional. If the FeatBit evaluation service is hosted separately from the admin API, supply this URL. Otherwise omit — the CLI defaults `--eval-host` to `--host`. |
+| `EVAL_HOST` | Use `https://app-eval.featbit.co` for hosted FeatBit because the management API host does not serve evaluation requests. |
 
 ## End-to-End Write Flow (Required)
 
@@ -56,17 +86,18 @@ Obtain the environment ID required by all flag write commands.
 
 ```bash
 featbit project list --json
-featbit project get --project-id <PROJECT_ID> --json
+featbit project get --project-id ${PROJECT_ID} --json
 ```
 
 **Expected**
 
 - Both commands exit with code `0`.
+- `project list` contains project key `featbit-cli-testing`.
 - Agent extracts `ENV_ID` from the environments array in the `project get` response.
 
 **Record**
 
-- `PROJECT_ID` chosen and from which field it was read.
+- Test project key `featbit-cli-testing`; redact the project ID in the report.
 - `ENV_ID` chosen and from which environment name/key.
 
 ---
@@ -83,6 +114,7 @@ featbit flag create --env-id ${ENV_ID} \
   --flag-name "CLI E2E Test Flag" \
   --flag-key ${TEST_FLAG_KEY} \
   --description "Created by AI agent write-command e2e test" \
+  --tags "cli,e2e" \
   --json
 ```
 
@@ -90,6 +122,7 @@ featbit flag create --env-id ${ENV_ID} \
 
 - Exit code is `0`.
 - Output is valid JSON.
+- Output contains the `cli` and `e2e` tags.
 - Agent extracts `VARIATION_ID_TRUE` and `VARIATION_ID_FALSE` from the returned flag's `variations` array (the variation whose `value` equals `"true"` and the one whose `value` equals `"false"`, respectively).
 
 **Record**
@@ -108,6 +141,7 @@ Verify the newly created flag is visible in `flag list` output.
 
 ```bash
 featbit flag list --env-id ${ENV_ID} --name ${TEST_FLAG_KEY}
+featbit flag list --env-id ${ENV_ID} --tags cli --json
 ```
 
 **Expected**
@@ -115,6 +149,7 @@ featbit flag list --env-id ${ENV_ID} --name ${TEST_FLAG_KEY}
 - Exit code is `0`.
 - Output contains `${TEST_FLAG_KEY}`.
 - The `Enabled` column shows `off` (flags are created disabled).
+- The tag-filtered JSON output contains `${TEST_FLAG_KEY}` and the `cli` tag.
 
 ---
 
@@ -251,6 +286,26 @@ featbit flag list --env-id ${ENV_ID} --name ${TEST_FLAG_KEY}
 
 ---
 
+### Flow Step 11: Confirm Audit Logs Exist
+
+**Purpose**
+Verify the write flow produced feature flag audit logs for the disposable test flag.
+
+**Command**
+
+```bash
+featbit flag audit-logs --env-id ${ENV_ID} --flag-key ${TEST_FLAG_KEY} --all --json
+```
+
+**Expected**
+
+- Exit code is `0`.
+- Output is valid JSON.
+- `totalCount` is greater than `0`.
+- Returned items have `refType` equal to `FeatureFlag`.
+
+---
+
 ## Individual Test Cases
 
 ### Case FW1: `flag create` Human-Readable Output
@@ -263,7 +318,8 @@ Verify the non-JSON output path for flag creation.
 ```bash
 featbit flag create --env-id ${ENV_ID} \
   --flag-name "CLI Human Output Test" \
-  --flag-key cli-human-test-$(date +%s)
+  --flag-key cli-human-test-$(date +%s) \
+  --tags "cli,human-output"
 ```
 
 **Expected**
@@ -544,7 +600,7 @@ Verify GUID validation for archive.
 **Command**
 
 ```bash
-featbit flag archive not-a-guid my-flag
+featbit flag archive --env-id not-a-guid --flag-key my-flag
 ```
 
 **Expected**
@@ -584,7 +640,7 @@ featbit --help
 
 ## Flow Test Logging Requirements
 
-For each write flow step (1–10), the report must include:
+For each write flow step (1–11), the report must include:
 
 - Exact command executed
 - Exit code observed
@@ -610,7 +666,7 @@ For End-to-End Write Flow steps also include:
 
 | Field | Meaning |
 | --- | --- |
-| `flow_step` | One of `1..10` |
+| `flow_step` | One of `1..11` |
 | `derived_values` | Values discovered in this step (e.g. `TEST_FLAG_KEY`, `VARIATION_ID_TRUE`) |
 
 ---
@@ -619,7 +675,7 @@ For End-to-End Write Flow steps also include:
 
 This test story is complete when:
 
-1. All ten write flow steps are executed in order and recorded.
+1. All eleven write flow steps are executed in order and recorded.
 2. `TEST_FLAG_KEY`, `VARIATION_ID_TRUE`, and `VARIATION_ID_FALSE` are correctly extracted in Flow Steps 1–2.
 3. The full flag lifecycle (create → toggle on → toggle off → set-rollout → evaluate → archive) completes with exit code `0` at each step.
 4. Evaluation returns a valid variation for the test user and the test flag key.
@@ -627,4 +683,4 @@ This test story is complete when:
 6. All individual test cases (FW1–FW6) pass or are explicitly documented as blocked with a reason.
 7. All negative cases (N3–N11) produce non-zero exit codes with descriptive error messages.
 8. The help surface check (S3) confirms all new commands and key options are documented.
-9. The agent report is complete and reproducible.
+9. The agent report is written to `tests/reports/` and is complete and reproducible.

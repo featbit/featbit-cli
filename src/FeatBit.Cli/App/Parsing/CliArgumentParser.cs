@@ -28,6 +28,9 @@ internal static class CliArgumentParser
                 case "--dry-run":
                     options.DryRun = true;
                     continue;
+                case "--cross-environment":
+                    options.CrossEnvironment = true;
+                    continue;
                 // Skip help flags — they are handled before ParseArgs is called
                 case "--help":
                 case "-h":
@@ -54,6 +57,29 @@ internal static class CliArgumentParser
                         break;
                     case "--name":
                         options.Name = optionValue;
+                        break;
+                    case "--query":
+                        options.Query = optionValue;
+                        break;
+                    case "--creator-id":
+                        if (!Guid.TryParse(optionValue, out var creatorId))
+                            return ParseOutcome.Fail("--creator-id must be a valid GUID.");
+                        options.CreatorId = creatorId;
+                        break;
+                    case "--flag-id":
+                        if (!Guid.TryParse(optionValue, out var flagId))
+                            return ParseOutcome.Fail("--flag-id must be a valid GUID.");
+                        options.FlagId = flagId;
+                        break;
+                    case "--from":
+                        if (!long.TryParse(optionValue, out var from) || from < 0)
+                            return ParseOutcome.Fail("--from must be a unix timestamp in milliseconds.");
+                        options.From = from;
+                        break;
+                    case "--to":
+                        if (!long.TryParse(optionValue, out var to) || to < 0)
+                            return ParseOutcome.Fail("--to must be a unix timestamp in milliseconds.");
+                        options.To = to;
                         break;
                     case "--page-index":
                         if (!int.TryParse(optionValue, out var pageIndex) || pageIndex < 0)
@@ -152,6 +178,17 @@ internal static class CliArgumentParser
             return ParseOutcome.Ok(new CommandRequest(CommandKind.ProjectGet, projectId, null, options));
         }
 
+        // project flags --project-id <guid>
+        if (positional is ["project", "flags"])
+        {
+            if (projectId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --project-id\n" +
+                    "  featbit project flags --project-id <guid> --all\n" +
+                    "  Run 'featbit project list --json' to find a project ID.");
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.ProjectFlags, projectId, null, options));
+        }
+
         // flag list --env-id <guid>
         if (positional is ["flag", "list"])
         {
@@ -161,6 +198,22 @@ internal static class CliArgumentParser
                     "  featbit flag list --env-id <guid>\n" +
                     "  Run 'featbit project get --project-id <id>' to find an environment ID.");
             return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagList, null, envId, options));
+        }
+
+        // flag audit-logs --env-id <guid> (--flag-id <guid> | --flag-key <key>)
+        if (positional is ["flag", "audit-logs"])
+        {
+            if (envId is null)
+                return ParseOutcome.Fail(
+                    "Missing required flag: --env-id\n" +
+                    "  featbit flag audit-logs --env-id <guid> --flag-id <guid>\n" +
+                    "  Or: featbit flag audit-logs --env-id <guid> --flag-key <key>");
+            if (options.FlagId is null && string.IsNullOrWhiteSpace(options.FlagKey))
+                return ParseOutcome.Fail(
+                    "Missing required flag: --flag-id or --flag-key\n" +
+                    "  featbit flag audit-logs --env-id <guid> --flag-id <guid>\n" +
+                    "  Or: featbit flag audit-logs --env-id <guid> --flag-key <key>");
+            return ParseOutcome.Ok(new CommandRequest(CommandKind.FlagAuditLogs, null, envId, options));
         }
 
         // flag toggle --env-id <guid> --flag-key <key> --enabled <true|false>

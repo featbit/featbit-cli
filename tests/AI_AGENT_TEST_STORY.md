@@ -13,6 +13,8 @@ Prove that `featbit-cli` can safely and correctly:
 - list projects
 - get a single project by ID
 - list feature flags in an environment
+- list feature flag details across all environments in a project
+- list audit logs for a feature flag
 
 ## Execution Rules
 
@@ -22,53 +24,64 @@ Prove that `featbit-cli` can safely and correctly:
 4. Stop only when a blocking failure makes later cases meaningless.
 5. Prefer running the built CLI exactly as an end user would.
 
+## Dedicated Test Project
+
+All live tests in this story must use the dedicated FeatBit test project:
+
+| Name | Value |
+| --- | --- |
+| `PROJECT_KEY` | `featbit-cli-testing` |
+| `PROJECT_ID` | local/runtime only; do not commit or report the value |
+| `HOST` | `https://app-api.featbit.co` |
+
+This project may be empty. If a case requires an existing feature flag, create a disposable flag through `AI_AGENT_WRITE_COMMANDS_TEST_STORY.md` first or mark the case `blocked` with the reason `no feature flags exist in test project`.
+
 ## Shared Inputs
 
 The agent needs these values before running command-level cases:
 
 | Name | Description |
 | --- | --- |
-| `HOST` | Optional FeatBit API root URL. If omitted, use CLI default `https://app-api.featbit.co`. |
-| `TOKEN` | Valid FeatBit access token. |
-| `ORG` | Valid organization ID. |
+| `HOST` | FeatBit API root URL. Use `https://app-api.featbit.co`. |
+| `TOKEN` | Valid test access token stored in local CLI config. Do not write the token into reports or repository files. |
+| `ORG` | Valid organization ID stored in local CLI config. |
 
 The following values must be discovered dynamically by the agent during execution:
 
 | Derived Name | How to get it |
 | --- | --- |
-| `PROJECT_ID` | Pick one project from `featbit project list`. |
-| `ENV_ID` | Pick one environment from `featbit project get <PROJECT_ID>`. |
-| `FLAG_NAME_FRAGMENT` | Optional. Pick a fragment from an existing flag name or key returned by `featbit flag list <ENV_ID>`. |
+| `PROJECT_ID` | Resolve from `featbit project list --json` by selecting project key `featbit-cli-testing`; do not write the value into reports. |
+| `ENV_ID` | Pick one environment from `featbit project get --project-id <redacted-project-id>`. |
+| `FLAG_ID` | Pick one feature flag ID from `featbit project flags --project-id <redacted-project-id> --all --json` or `featbit flag list --env-id <ENV_ID> --all --json`. |
+| `FLAG_KEY` | Pick the key for `FLAG_ID` from the same flag response. |
+| `FLAG_NAME_FRAGMENT` | Optional. Pick a fragment from an existing flag name or key returned by `featbit flag list --env-id <ENV_ID>`. |
+
+## Report Artifact
+
+Every execution of this story must create a Markdown report under `tests/reports/`.
+
+Minimum report sections:
+
+- Summary
+- Environment and sanitized configuration
+- Commands executed
+- Case results
+- Derived IDs
+- Blocked cases
+- Evidence snippets
+
+Never include the full access token, environment secret, or Authorization header.
 
 ## End-to-End Discovery Flow (Required)
 
 The agent must execute and record this exact flow in sequence. This flow is mandatory and is part of test completion criteria.
 
-### Flow Step 1: `config init`
+### Flow Step 1: `config set`
 
 **Command**
 
 ```bash
-featbit config init
-```
-
-**Input**
-
-- `Host`: press Enter for default, or provide `HOST`
-- `Access token`: `TOKEN`
-- `Organization`: `ORG`
-
-**Expected**
-
-- Exit code is `0`
-- Output contains `Config saved to:`
-
-### Flow Step 2: `config set`
-
-**Command**
-
-```bash
-featbit config set --host ${HOST} --token ${TOKEN} --org ${ORG}
+featbit config set --host ${HOST} --token <redacted> --org ${ORG}
 ```
 
 **Expected**
@@ -76,7 +89,7 @@ featbit config set --host ${HOST} --token ${TOKEN} --org ${ORG}
 - Exit code is `0`
 - Output contains `Config saved to:`
 
-### Flow Step 3: `config show` Consistency Check
+### Flow Step 2: `config show` Consistency Check
 
 **Command**
 
@@ -87,8 +100,22 @@ featbit config show
 **Expected**
 
 - Exit code is `0`
-- Output host and organization match the values provided in Steps 1-2
+- Output host and organization match the expected test configuration
 - Token is masked
+
+### Flow Step 3: `config validate`
+
+**Command**
+
+```bash
+featbit config validate
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output contains `Config validation succeeded.`
+- Output contains `Projects fetched: 1`
 
 ### Flow Step 4: `project list`
 
@@ -102,7 +129,7 @@ featbit project list --json
 
 - Exit code is `0`
 - Output is valid JSON
-- Agent extracts one valid `PROJECT_ID` from returned data
+- Output contains project key `featbit-cli-testing`
 
 ### Flow Step 5: `project get`
 
@@ -149,15 +176,56 @@ Identify flags whose `updated` date is older than one month.
 | --- | --- | --- | --- | --- | --- | --- |
 | ... | ... | ... | ... | ... | ... | `stale` / `active` / `unknown` |
 
+### Flow Step 8: Project-Wide Flag Details
+
+**Command**
+
+```bash
+featbit project flags --project-id ${PROJECT_ID} --all --json
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- JSON contains every environment under `data.environments`
+- Each returned flag item includes a `tags` array when flags exist
+- Empty `items` arrays are acceptable for a newly created test project
+- Agent extracts one `FLAG_ID` and `FLAG_KEY` when at least one flag exists
+
+### Flow Step 9: Feature Flag Audit Logs
+
+**Command**
+
+```bash
+featbit flag audit-logs --env-id ${ENV_ID} --flag-id ${FLAG_ID} --all --json
+```
+
+If only `FLAG_KEY` is available:
+
+```bash
+featbit flag audit-logs --env-id ${ENV_ID} --flag-key ${FLAG_KEY} --all --json
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- JSON contains `totalCount` and `items`
+- Each returned audit log references `refType: FeatureFlag` and the selected feature flag ID
+- If no feature flags exist, mark this step as `blocked` and run `AI_AGENT_WRITE_COMMANDS_TEST_STORY.md` to seed a disposable flag before retrying audit log validation
+
 ## Flow Test Logging Requirements
 
-For Flow Steps 1-7, the report must include:
+For Flow Steps 1-9, the report must include:
 
 - exact command
 - exit code
-- selected IDs (`PROJECT_ID`, `ENV_ID`) with source evidence
+- selected project key and environment ID with source evidence; redact project ID
 - consistency check result for `config show`
 - stale table generation result and row count
+- project-wide flag detail row count and whether `tags` is present
+- audit log row count and selected feature flag identity
 
 ## Setup
 
@@ -379,10 +447,10 @@ Verify fetching a specific project by ID.
 **Command**
 
 ```bash
-featbit project get ${PROJECT_ID}
+featbit project get --project-id ${PROJECT_ID}
 ```
 
-`PROJECT_ID` must be selected from Case P2 output.
+Resolve `PROJECT_ID` from project key `featbit-cli-testing`; do not write the value into the report.
 
 **Expected**
 
@@ -397,10 +465,10 @@ Verify JSON output for a specific project.
 **Command**
 
 ```bash
-featbit project get ${PROJECT_ID} --json
+featbit project get --project-id ${PROJECT_ID} --json
 ```
 
-`PROJECT_ID` must be selected from Case P2 output.
+Resolve `PROJECT_ID` from project key `featbit-cli-testing`; do not write the value into the report.
 
 **Expected**
 
@@ -416,7 +484,7 @@ Verify flag listing for an environment.
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID}
+featbit flag list --env-id ${ENV_ID}
 ```
 
 `ENV_ID` must be selected from Case P4 output.
@@ -435,7 +503,7 @@ Verify `--all` aggregates paged results.
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID} --all
+featbit flag list --env-id ${ENV_ID} --all
 ```
 
 `ENV_ID` must be selected from Case P4 output.
@@ -449,12 +517,13 @@ featbit flag list ${ENV_ID} --all
 ### Case F3: Flag Filter
 
 **Purpose**
-Verify name/key filtering.
+Verify name/key filtering and tag filtering.
 
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID} --name ${FLAG_NAME_FRAGMENT}
+featbit flag list --env-id ${ENV_ID} --name ${FLAG_NAME_FRAGMENT}
+featbit flag list --env-id ${ENV_ID} --tags cli --json
 ```
 
 `ENV_ID` must be selected from Case P4 output.
@@ -464,6 +533,7 @@ featbit flag list ${ENV_ID} --name ${FLAG_NAME_FRAGMENT}
 
 - Exit code is `0`
 - Output reflects a filtered result set
+- Tag-filtered output returns only flags containing the complete `cli` tag when such flags exist
 
 ### Case F4: Flag List JSON Output
 
@@ -473,7 +543,7 @@ Verify machine-readable JSON output for flags.
 **Command**
 
 ```bash
-featbit flag list ${ENV_ID} --json
+featbit flag list --env-id ${ENV_ID} --json
 ```
 
 `ENV_ID` must be selected from Case P4 output.
@@ -485,6 +555,53 @@ featbit flag list ${ENV_ID} --json
 - JSON contains `totalCount`
 - JSON contains `items`
 
+### Case F5: Project Flags All Environments JSON Output
+
+**Purpose**
+Verify project-wide feature flag details can be fetched across all environments.
+
+**Command**
+
+```bash
+featbit project flags --project-id ${PROJECT_ID} --all --json
+```
+
+Resolve `PROJECT_ID` from project key `featbit-cli-testing`; do not write the value into the report.
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- JSON contains `data.environments`
+- Each environment result contains `envId`, `envKey`, `totalCount`, and `items`
+- Each returned flag item contains a `tags` array when flags exist
+- Empty `items` arrays are acceptable for a newly created test project
+
+### Case F6: Feature Flag Audit Logs JSON Output
+
+**Purpose**
+Verify audit logs can be fetched for a feature flag.
+
+**Command**
+
+```bash
+featbit flag audit-logs --env-id ${ENV_ID} --flag-id ${FLAG_ID} --all --json
+```
+
+`ENV_ID` and `FLAG_ID` must be selected from Case F5 output. If the test project has no flags, mark this case `blocked` until `AI_AGENT_WRITE_COMMANDS_TEST_STORY.md` creates a disposable test flag. If only the flag key is available, use:
+
+```bash
+featbit flag audit-logs --env-id ${ENV_ID} --flag-key ${FLAG_KEY} --all --json
+```
+
+**Expected**
+
+- Exit code is `0`
+- Output is valid JSON
+- JSON contains `totalCount`
+- JSON contains `items`
+- Returned items, if any, have `refType` equal to `FeatureFlag`
+
 ## Input Validation
 
 ### Case N1: Invalid Project ID
@@ -495,7 +612,7 @@ Verify invalid GUID input is rejected before API invocation.
 **Command**
 
 ```bash
-featbit project get invalid-guid
+featbit project get --project-id invalid-guid
 ```
 
 **Expected**
@@ -511,7 +628,7 @@ Verify invalid GUID input is rejected before API invocation.
 **Command**
 
 ```bash
-featbit flag list invalid-guid
+featbit flag list --env-id invalid-guid
 ```
 
 **Expected**
@@ -536,8 +653,8 @@ For End-to-End Discovery Flow, also include:
 
 | Field | Meaning |
 | --- | --- |
-| `flow_step` | One of `1..7` |
-| `derived_values` | Values discovered in this step (for example `PROJECT_ID`, `ENV_ID`) |
+| `flow_step` | One of `1..9` |
+| `derived_values` | Values discovered in this step, with project ID redacted and environment ID included when applicable |
 | `stale_table_path_or_inline` | Path to generated table artifact or inline markdown table |
 
 ## Completion Criteria
@@ -549,6 +666,6 @@ The test story is complete when:
 3. Validation cases behave as documented.
 4. Project and flag commands succeed against a real environment.
 5. Negative cases produce understandable failures.
-6. End-to-end discovery flow (Steps 1-7) is fully executed and recorded.
+6. End-to-end discovery flow (Steps 1-9) is fully executed and recorded, with empty-project blockers stated explicitly.
 7. A stale feature flag table is generated with clear `stale`/`active`/`unknown` status.
-8. The agent report is complete and reproducible.
+8. The agent report is written to `tests/reports/` and is complete and reproducible.

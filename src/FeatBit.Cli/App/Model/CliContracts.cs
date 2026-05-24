@@ -4,7 +4,9 @@ internal enum CommandKind
 {
     ProjectList,
     ProjectGet,
+    ProjectFlags,
     FlagList,
+    FlagAuditLogs,
     FlagToggle,
     FlagArchive,
     FlagCreate,
@@ -26,6 +28,18 @@ internal sealed class CliOptions
     public string? Organization { get; set; }
 
     public string? Name { get; set; }
+
+    public string? Query { get; set; }
+
+    public Guid? CreatorId { get; set; }
+
+    public Guid? FlagId { get; set; }
+
+    public long? From { get; set; }
+
+    public long? To { get; set; }
+
+    public bool CrossEnvironment { get; set; }
 
     public int PageIndex { get; set; }
 
@@ -77,6 +91,18 @@ internal sealed record CommandRequest(CommandKind Kind, Guid? ProjectId, Guid? E
     public string? Organization => Options.Organization;
 
     public string? Name => Options.Name;
+
+    public string? Query => Options.Query;
+
+    public Guid? CreatorId => Options.CreatorId;
+
+    public Guid? FlagId => Options.FlagId;
+
+    public long? From => Options.From;
+
+    public long? To => Options.To;
+
+    public bool CrossEnvironment => Options.CrossEnvironment;
 
     public int PageIndex => Options.PageIndex;
 

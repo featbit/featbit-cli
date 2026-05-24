@@ -59,9 +59,57 @@ public sealed class FeatBitClient : IFeatBitClient
             queryParts.Add($"Name={Uri.EscapeDataString(query.Name)}");
         }
 
+        if (!string.IsNullOrWhiteSpace(query.Tags))
+        {
+            var tags = query.Tags.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            foreach (var tag in tags)
+            {
+                queryParts.Add($"Tags={Uri.EscapeDataString(tag)}");
+            }
+        }
+
         var path = $"/api/v1/envs/{envId}/feature-flags?{string.Join('&', queryParts)}";
 
         return SendGetAsync(path, FeatBitJsonContext.Default.ApiResponsePagedResultFeatureFlagVm, cancellationToken);
+    }
+
+    public Task<ApiResponse<FeatureFlagVm>> GetFeatureFlagAsync(
+        Guid envId,
+        string key,
+        CancellationToken cancellationToken)
+    {
+        var path = $"/api/v1/envs/{envId}/feature-flags/{Uri.EscapeDataString(key)}";
+        return SendGetAsync(path, FeatBitJsonContext.Default.ApiResponseFeatureFlagVm, cancellationToken);
+    }
+
+    public Task<ApiResponse<PagedResult<AuditLogVm>>> GetAuditLogsAsync(
+        Guid envId,
+        AuditLogQuery query,
+        CancellationToken cancellationToken)
+    {
+        var queryParts = new List<string>(capacity: 9)
+        {
+            $"PageIndex={query.PageIndex}",
+            $"PageSize={query.PageSize}"
+        };
+
+        if (!string.IsNullOrWhiteSpace(query.Query))
+            queryParts.Add($"Query={Uri.EscapeDataString(query.Query)}");
+        if (query.CreatorId is not null)
+            queryParts.Add($"CreatorId={query.CreatorId}");
+        if (!string.IsNullOrWhiteSpace(query.RefId))
+            queryParts.Add($"RefId={Uri.EscapeDataString(query.RefId)}");
+        if (!string.IsNullOrWhiteSpace(query.RefType))
+            queryParts.Add($"RefType={Uri.EscapeDataString(query.RefType)}");
+        if (query.From is not null)
+            queryParts.Add($"From={query.From}");
+        if (query.To is not null)
+            queryParts.Add($"To={query.To}");
+        if (query.CrossEnvironment)
+            queryParts.Add("CrossEnvironment=true");
+
+        var path = $"/api/v1/envs/{envId}/audit-logs?{string.Join('&', queryParts)}";
+        return SendGetAsync(path, FeatBitJsonContext.Default.ApiResponsePagedResultAuditLogVm, cancellationToken);
     }
 
     public Task<WriteResult> ToggleFeatureFlagAsync(Guid envId, string key, bool status, CancellationToken cancellationToken)
@@ -79,7 +127,7 @@ public sealed class FeatBitClient : IFeatBitClient
             cancellationToken);
 
     public Task<WriteResult> CreateFeatureFlagAsync(
-        Guid envId, string name, string key, string? description, CancellationToken cancellationToken)
+        Guid envId, string name, string key, string? description, string? tags, CancellationToken cancellationToken)
     {
         // Always creates a boolean flag with two default variations (true / false).
         var trueVarId  = Guid.NewGuid().ToString();
@@ -104,6 +152,17 @@ public sealed class FeatBitClient : IFeatBitClient
         {
             sb.Append(",\"description\":");
             AppendJsonString(sb, description);
+        }
+        var tagParts = tags?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tagParts is { Length: > 0 })
+        {
+            sb.Append(",\"tags\":[");
+            for (var i = 0; i < tagParts.Length; i++)
+            {
+                if (i > 0) sb.Append(',');
+                AppendJsonString(sb, tagParts[i]);
+            }
+            sb.Append(']');
         }
         sb.Append('}');
 

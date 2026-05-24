@@ -6,7 +6,9 @@ Supported operations:
 
 - List projects in an organization
 - Get a single project by ID
+- List feature flags across all environments in a project
 - List, create, toggle, archive, and set rollout for feature flags
+- List audit logs for a feature flag
 - Evaluate feature flags for a given user
 
 It also includes user-level configuration commands so you can store your FeatBit API host, access token, and organization ID outside the repository.
@@ -30,9 +32,11 @@ It also includes user-level configuration commands so you can store your FeatBit
 
    ```bash
    featbit project list
-   featbit project get <project-id>
-   featbit flag list <env-id>
-   featbit flag toggle <env-id> <key> true
+   featbit project get --project-id <project-id>
+   featbit project flags --project-id <project-id> --all
+   featbit flag list --env-id <env-id>
+   featbit flag audit-logs --env-id <env-id> --flag-key <key>
+   featbit flag toggle --env-id <env-id> --flag-key <key> --enabled true
    featbit flag evaluate --user-key <keyId> --env-secret <secret>
    ```
 
@@ -261,8 +265,8 @@ Id                                   | Name          | Key           | EnvCount
 Fetch a single project and its environments by project ID (must be a valid GUID).
 
 ```bash
-featbit project get <project-id>
-featbit project get <project-id> --json
+featbit project get --project-id <project-id>
+featbit project get --project-id <project-id> --json
 ```
 
 Table output shows project name, key, ID, then an environment table with columns: `EnvId`, `Name`, `Key`, `Description`
@@ -279,6 +283,22 @@ b60c6bc0-0000-0000-0000-7f0ade9ff94c | Dev  | dev  |
 9ac3fe71-0000-0000-0000-b331fe9edd4b | Prod | prod |
 ```
 
+### `project flags`
+
+Fetch feature flag details across every environment in a project. This is the quickest way to inspect all flags for a project, including `tags`, without first looping over each environment yourself.
+
+```bash
+featbit project flags --project-id <project-id>
+featbit project flags --project-id <project-id> --all
+featbit project flags --project-id <project-id> --tags cli,e2e --all --json
+```
+
+By default, one page of flags is fetched per environment. Use `--all` to aggregate every page for every environment.
+
+Table output columns: `EnvId`, `EnvKey`, `FlagId`, `Key`, `Name`, `Enabled`, `Type`, `Tags`
+
+JSON output groups flags by environment and includes feature flag details returned by the API, including `variations`, `serves`, `lastChange`, and `tags`.
+
 ### `project list` with explicit credentials
 
 Override saved config on a single call without changing the config file:
@@ -294,7 +314,7 @@ All business commands accept `--host`, `--token`, and `--org` as overrides.
 List feature flags in an environment (must be a valid GUID).
 
 ```bash
-featbit flag list <env-id>
+featbit flag list --env-id <env-id>
 ```
 
 Table output columns: `Id`, `Key`, `Name`, `Enabled`, `Type`, `Tags`
@@ -313,8 +333,8 @@ TotalCount: 1
 By default the first page of 10 flags is returned. Use `--page-index` and `--page-size` to page through results:
 
 ```bash
-featbit flag list <env-id> --page-index 0 --page-size 20
-featbit flag list <env-id> --page-index 1 --page-size 20
+featbit flag list --env-id <env-id> --page-index 0 --page-size 20
+featbit flag list --env-id <env-id> --page-index 1 --page-size 20
 ```
 
 | Option | Default | Description |
@@ -325,7 +345,7 @@ featbit flag list <env-id> --page-index 1 --page-size 20
 #### Fetch all pages at once
 
 ```bash
-featbit flag list <env-id> --all
+featbit flag list --env-id <env-id> --all
 ```
 
 Fetches every page and returns the combined result set. `TotalCount` reflects the total number of flags.
@@ -333,16 +353,17 @@ Fetches every page and returns the combined result set. `TotalCount` reflects th
 #### Filter by name or key
 
 ```bash
-featbit flag list <env-id> --name my-flag
+featbit flag list --env-id <env-id> --name my-flag
+featbit flag list --env-id <env-id> --tags cli,e2e
 ```
 
-Passes the value as a server-side name/key filter. Partial matches are supported.
+Passes the value as a server-side name/key or tag filter. Name/key partial matches are supported. Tag filters require complete tag names.
 
 #### JSON output
 
 ```bash
-featbit flag list <env-id> --json
-featbit flag list <env-id> --all --json
+featbit flag list --env-id <env-id> --json
+featbit flag list --env-id <env-id> --all --json
 ```
 
 JSON shape:
@@ -369,11 +390,39 @@ JSON shape:
 }
 ```
 
+### `flag audit-logs`
+
+List audit logs for a feature flag. The FeatBit audit API filters by feature flag ID; for convenience, the CLI also accepts `--flag-key` and resolves it before querying audit logs.
+
+```bash
+featbit flag audit-logs --env-id <env-id> --flag-key my-feature
+featbit flag audit-logs --env-id <env-id> --flag-id <flag-id> --all
+featbit flag audit-logs --env-id <env-id> --flag-key my-feature --page-size 20 --json
+```
+
+| Option | Default | Description |
+| ------ | ------- | ----------- |
+| `--env-id` | Required | Environment ID |
+| `--flag-id` | | Feature flag ID |
+| `--flag-key` | | Feature flag key, resolved to ID before querying |
+| `--query` | | Filter by keyword or comment fragment |
+| `--creator-id` | | Filter by creator ID |
+| `--from` | | Start time as unix milliseconds |
+| `--to` | | End time as unix milliseconds |
+| `--cross-environment` | `false` | Query across environments |
+| `--page-index` | `0` | Zero-based page number |
+| `--page-size` | `10` | Number of audit logs per page |
+| `--all` | `false` | Fetch all pages |
+| `--json` | `false` | Output as JSON |
+
+Table output columns: `CreatedAt`, `Operation`, `RefType`, `RefId`, `Creator`, `Comment`
+
 ### JSON output for project commands
 
 ```bash
 featbit project list --json
-featbit project get <project-id> --json
+featbit project get --project-id <project-id> --json
+featbit project flags --project-id <project-id> --all --json
 ```
 
 All JSON responses share the same envelope:
@@ -391,9 +440,9 @@ All JSON responses share the same envelope:
 Enable or disable a feature flag.
 
 ```bash
-featbit flag toggle <env-id> <key> true
-featbit flag toggle <env-id> <key> false
-featbit flag toggle <env-id> <key> true --json
+featbit flag toggle --env-id <env-id> --flag-key <key> --enabled true
+featbit flag toggle --env-id <env-id> --flag-key <key> --enabled false
+featbit flag toggle --env-id <env-id> --flag-key <key> --enabled true --json
 ```
 
 Example output:
@@ -407,8 +456,8 @@ Feature flag 'my-feature' is now enabled.
 Archive a feature flag.
 
 ```bash
-featbit flag archive <env-id> <key>
-featbit flag archive <env-id> <key> --json
+featbit flag archive --env-id <env-id> --flag-key <key>
+featbit flag archive --env-id <env-id> --flag-key <key> --json
 ```
 
 Example output:
@@ -422,9 +471,9 @@ Feature flag 'my-feature' has been archived.
 Create a new boolean feature flag.
 
 ```bash
-featbit flag create <env-id> --flag-name <name> --flag-key <key>
-featbit flag create <env-id> --flag-name <name> --flag-key <key> --description <desc>
-featbit flag create <env-id> --flag-name <name> --flag-key <key> --json
+featbit flag create --env-id <env-id> --flag-name <name> --flag-key <key>
+featbit flag create --env-id <env-id> --flag-name <name> --flag-key <key> --description <desc>
+featbit flag create --env-id <env-id> --flag-name <name> --flag-key <key> --tags cli,e2e --json
 ```
 
 | Option | Required | Description |
@@ -432,6 +481,7 @@ featbit flag create <env-id> --flag-name <name> --flag-key <key> --json
 | `--flag-name` | Yes | Display name of the flag |
 | `--flag-key` | Yes | Unique key for the flag |
 | `--description` | No | Optional description |
+| `--tags` | No | Optional comma-separated tags |
 
 Example output:
 
@@ -444,9 +494,9 @@ Feature flag 'My Feature' (key: my-feature) created successfully.
 Update the rollout (percentage) assignments for a feature flag's variations.
 
 ```bash
-featbit flag set-rollout <env-id> <key> --rollout '<json>'
-featbit flag set-rollout <env-id> <key> --rollout '<json>' --dispatch-key <attribute>
-featbit flag set-rollout <env-id> <key> --rollout '<json>' --json
+featbit flag set-rollout --env-id <env-id> --flag-key <key> --rollout '<json>'
+featbit flag set-rollout --env-id <env-id> --flag-key <key> --rollout '<json>' --dispatch-key <attribute>
+featbit flag set-rollout --env-id <env-id> --flag-key <key> --rollout '<json>' --json
 ```
 
 The `--rollout` value is a JSON array of `{ variationId, percentage }` objects. Percentages must sum to 100.
@@ -454,7 +504,7 @@ The `--rollout` value is a JSON array of `{ variationId, percentage }` objects. 
 Example:
 
 ```bash
-featbit flag set-rollout <env-id> my-flag --rollout '[{"variationId":"<uuid1>","percentage":70},{"variationId":"<uuid2>","percentage":30}]'
+featbit flag set-rollout --env-id <env-id> --flag-key my-flag --rollout '[{"variationId":"<uuid1>","percentage":70},{"variationId":"<uuid2>","percentage":30}]'
 ```
 
 | Option | Required | Description |
@@ -476,6 +526,7 @@ Evaluate feature flags for a given user against the FeatBit evaluation server.
 featbit flag evaluate --user-key <keyId> --env-secret <secret>
 featbit flag evaluate --user-key <keyId> --env-secret <secret> --flag-keys flag1,flag2
 featbit flag evaluate --user-key <keyId> --env-secret <secret> --tags release --tag-filter or
+featbit flag evaluate --eval-host https://app-eval.featbit.co --user-key <keyId> --env-secret <secret>
 featbit flag evaluate --user-key <keyId> --env-secret <secret> --json
 ```
 
@@ -493,6 +544,8 @@ featbit flag evaluate --user-key <keyId> --env-secret <secret> --json
 Example table output:
 
 ```
+
+For hosted FeatBit, use `--eval-host https://app-eval.featbit.co` when your management host is `https://app-api.featbit.co`.
 Key        | Variation | MatchReason
 -----------+-----------+------------
 my-feature | true      | TargetMatch

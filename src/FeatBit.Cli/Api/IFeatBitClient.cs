@@ -13,12 +13,22 @@ public interface IFeatBitClient
         FeatureFlagQuery query,
         CancellationToken cancellationToken);
 
+    Task<ApiResponse<FeatureFlagVm>> GetFeatureFlagAsync(
+        Guid envId,
+        string key,
+        CancellationToken cancellationToken);
+
+    Task<ApiResponse<PagedResult<AuditLogVm>>> GetAuditLogsAsync(
+        Guid envId,
+        AuditLogQuery query,
+        CancellationToken cancellationToken);
+
     Task<WriteResult> ToggleFeatureFlagAsync(Guid envId, string key, bool status, CancellationToken cancellationToken);
 
     Task<WriteResult> ArchiveFeatureFlagAsync(Guid envId, string key, CancellationToken cancellationToken);
 
     Task<WriteResult> CreateFeatureFlagAsync(
-        Guid envId, string name, string key, string? description, CancellationToken cancellationToken);
+        Guid envId, string name, string key, string? description, string? tags, CancellationToken cancellationToken);
 
     Task<WriteResult> UpdateFeatureFlagRolloutAsync(
         Guid envId, string key, string rolloutAssignments, string? dispatchKey, CancellationToken cancellationToken);
