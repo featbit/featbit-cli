@@ -4,11 +4,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Exact version to release, for example 0.1.0 or v0.1.0. Leave empty to bump from the latest tag."
+        description: "Optional exact version, for example 0.1.0 or v0.1.0. Leave empty to auto bump."
         required: false
         type: string
       bump:
-        description: "Version bump to apply when version is empty"
+        description: "Version bump to use when version is empty"
         required: true
         default: patch
         type: choice
@@ -45,7 +45,7 @@ permissions:
 
 jobs:
   prepare:
-    name: Bump version and tag
+    name: Compute version and tag
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -55,60 +55,101 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - name: Compute version
         id: version
         shell: pwsh
         run: |
           $explicitVersion = "${{ inputs.version }}".Trim()
+          $bump = "${{ inputs.bump }}"
           $tagPrefix = "${{ inputs.tag_prefix }}"
 
-          if ($explicitVersion.Length -gt 0) {
-            $version = $explicitVersion.TrimStart($tagPrefix)
+          function Get-NormalizedVersion([string] $value) {
+            $version = $value.Trim()
+            if ($version.StartsWith($tagPrefix)) {
+              $version = $version.Substring($tagPrefix.Length)
+            }
 
             if ($version -notmatch "^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$") {
-              throw "Version '$version' is not valid. Use SemVer like 0.1.0 or 0.1.0-beta.1."
+              throw "Version '$version' is not valid. Use SemVer like 0.1.1 or 0.1.1-beta.1."
             }
 
+            return $version
+          }
+
+          function New-StableVersion([int] $major, [int] $minor, [int] $patch) {
+            return [pscustomobject]@{
+              Major = $major
+              Minor = $minor
+              Patch = $patch
+            }
+          }
+
+          function Test-GreaterStableVersion($left, $right) {
+            if ($null -eq $right) { return $true }
+            if ($left.Major -ne $right.Major) { return $left.Major -gt $right.Major }
+            if ($left.Minor -ne $right.Minor) { return $left.Minor -gt $right.Minor }
+            return $left.Patch -gt $right.Patch
+          }
+
+          $tagLines = @(git ls-remote --tags --refs origin "$tagPrefix*")
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to read tags from origin."
+          }
+
+          $remoteTags = @()
+          foreach ($line in $tagLines) {
+            if ($line -match "refs/tags/(?<tag>.+)$") {
+              $remoteTags += $Matches.tag
+            }
+          }
+
+          if ([string]::IsNullOrWhiteSpace($explicitVersion)) {
+            $stableTagPattern = "^" + [regex]::Escape($tagPrefix) + "(\d+)\.(\d+)\.(\d+)$"
+            $base = $null
+
+            foreach ($remoteTag in $remoteTags) {
+              if ($remoteTag -match $stableTagPattern) {
+                $candidate = New-StableVersion ([int]$Matches[1]) ([int]$Matches[2]) ([int]$Matches[3])
+                if (Test-GreaterStableVersion $candidate $base) {
+                  $base = $candidate
+                }
+              }
+            }
+
+            if ($null -eq $base) {
+              $projectText = Get-Content "src/FeatBit.Cli/FeatBit.Cli.csproj" -Raw
+              if ($projectText -match "<Version>(?<version>\d+\.\d+\.\d+)</Version>") {
+                $projectVersion = $Matches.version
+                $parts = $projectVersion.Split(".")
+                $base = New-StableVersion ([int]$parts[0]) ([int]$parts[1]) ([int]$parts[2])
+              } else {
+                $base = New-StableVersion 0 0 0
+              }
+            }
+
+            switch ($bump) {
+              "major" { $next = New-StableVersion ($base.Major + 1) 0 0 }
+              "minor" { $next = New-StableVersion $base.Major ($base.Minor + 1) 0 }
+              default { $next = New-StableVersion $base.Major $base.Minor ($base.Patch + 1) }
+            }
+
+            $version = "$($next.Major).$($next.Minor).$($next.Patch)"
             $tag = "$tagPrefix$version"
-            if (git rev-parse "$tag" 2>$null) {
-              throw "Tag '$tag' already exists. Use an unused explicit version, or leave version empty and select a bump."
+
+            while ($remoteTags -contains $tag) {
+              $next.Patch += 1
+              $version = "$($next.Major).$($next.Minor).$($next.Patch)"
+              $tag = "$tagPrefix$version"
             }
           } else {
-            $latestTag = git tag --list "$tagPrefix[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | Select-Object -First 1
+            $version = Get-NormalizedVersion $explicitVersion
+            $tag = "$tagPrefix$version"
 
-            if ([string]::IsNullOrWhiteSpace($latestTag)) {
-              $projectText = Get-Content "src/FeatBit.Cli/FeatBit.Cli.csproj" -Raw
-              if ($projectText -match "<Version>(?<version>[^<]+)</Version>") {
-                $version = $Matches.version.Trim()
-              } else {
-                $version = "0.0.0"
-              }
-            } else {
-              $version = $latestTag.TrimStart($tagPrefix)
+            if ($remoteTags -contains $tag) {
+              throw "Tag '$tag' already exists. Leave version empty to auto bump, or choose an unused explicit version."
             }
-
-            if ($version -notmatch "^\d+\.\d+\.\d+$") {
-              throw "Automatic bump only supports stable three-part versions. Found '$version'. Provide an explicit unused version instead."
-            }
-
-            $parts = $version.Split(".")
-            $major = [int]$parts[0]
-            $minor = [int]$parts[1]
-            $patch = [int]$parts[2]
-
-            do {
-              switch ("${{ inputs.bump }}") {
-                "major" { $major++; $minor = 0; $patch = 0 }
-                "minor" { $minor++; $patch = 0 }
-                "patch" { $patch++ }
-                default { throw "Unsupported bump '${{ inputs.bump }}'." }
-              }
-
-              $version = "$major.$minor.$patch"
-              $tag = "$tagPrefix$version"
-            } while (git rev-parse "$tag" 2>$null)
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT
