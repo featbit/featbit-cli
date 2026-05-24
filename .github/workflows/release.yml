@@ -1,0 +1,273 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Exact version to release, for example 0.1.0 or v0.1.0. Leave empty to bump from the latest tag."
+        required: false
+        type: string
+      bump:
+        description: "Version bump to apply when version is empty"
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      notes:
+        description: "GitHub release notes mode"
+        required: true
+        default: generated
+        type: choice
+        options:
+          - generated
+          - empty
+      tag_prefix:
+        description: "Git tag prefix"
+        required: true
+        default: v
+        type: string
+      draft:
+        description: "Create as draft release"
+        required: true
+        default: true
+        type: boolean
+      prerelease:
+        description: "Mark as prerelease"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    name: Bump version and tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Compute version
+        id: version
+        shell: pwsh
+        run: |
+          $explicitVersion = "${{ inputs.version }}".Trim()
+          $tagPrefix = "${{ inputs.tag_prefix }}"
+
+          if ($explicitVersion.Length -gt 0) {
+            $version = $explicitVersion.TrimStart($tagPrefix)
+          } else {
+            $latestTag = git tag --list "$tagPrefix[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | Select-Object -First 1
+
+            if ([string]::IsNullOrWhiteSpace($latestTag)) {
+              $projectText = Get-Content "src/FeatBit.Cli/FeatBit.Cli.csproj" -Raw
+              if ($projectText -match "<Version>(?<version>[^<]+)</Version>") {
+                $version = $Matches.version.Trim()
+              } else {
+                $version = "0.1.0"
+              }
+            } else {
+              $base = $latestTag.TrimStart($tagPrefix)
+              $parts = $base.Split(".")
+              if ($parts.Length -ne 3) {
+                throw "Latest tag '$latestTag' is not a three-part semantic version."
+              }
+
+              $major = [int]$parts[0]
+              $minor = [int]$parts[1]
+              $patch = [int]$parts[2]
+
+              switch ("${{ inputs.bump }}") {
+                "major" { $major++; $minor = 0; $patch = 0 }
+                "minor" { $minor++; $patch = 0 }
+                "patch" { $patch++ }
+                default { throw "Unsupported bump '${{ inputs.bump }}'." }
+              }
+
+              $version = "$major.$minor.$patch"
+            }
+          }
+
+          if ($version -notmatch "^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$") {
+            throw "Version '$version' is not valid. Use SemVer like 0.1.0 or 0.1.0-beta.1."
+          }
+
+          $tag = "$tagPrefix$version"
+          if (git rev-parse "$tag" 2>$null) {
+            throw "Tag '$tag' already exists."
+          }
+
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "tag=$tag" >> $env:GITHUB_OUTPUT
+          "Computed release version $version ($tag)."
+
+      - name: Update project version
+        shell: pwsh
+        run: |
+          $path = "src/FeatBit.Cli/FeatBit.Cli.csproj"
+          $version = "${{ steps.version.outputs.version }}"
+          $content = Get-Content $path -Raw
+
+          if ($content -match "<Version>[^<]+</Version>") {
+            $content = $content -replace "<Version>[^<]+</Version>", "<Version>$version</Version>"
+          } else {
+            $content = $content -replace "(<TargetFramework>[^<]+</TargetFramework>)", "`$1`n    <Version>$version</Version>"
+          }
+
+          Set-Content -Path $path -Value $content -NoNewline
+
+      - name: Commit version bump
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if ! git diff --quiet -- src/FeatBit.Cli/FeatBit.Cli.csproj; then
+            git add src/FeatBit.Cli/FeatBit.Cli.csproj
+            git commit -m "chore: bump version to ${{ steps.version.outputs.version }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
+
+  build:
+    name: Build ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    needs: prepare
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            asset_name: featbit-cli-win-x64
+            archive_ext: zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            asset_name: featbit-cli-linux-x64
+            archive_ext: tar.gz
+          - os: macos-13
+            rid: osx-x64
+            asset_name: featbit-cli-osx-x64
+            archive_ext: tar.gz
+          - os: macos-14
+            rid: osx-arm64
+            asset_name: featbit-cli-osx-arm64
+            archive_ext: tar.gz
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Install Native AOT prerequisites on Ubuntu
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev
+
+      - name: Restore
+        run: dotnet restore featbit-cli.slnx
+
+      - name: Publish Native AOT
+        shell: pwsh
+        run: |
+          dotnet publish src/FeatBit.Cli/FeatBit.Cli.csproj `
+            -c Release `
+            -r "${{ matrix.rid }}" `
+            --self-contained true `
+            -o "artifacts/publish/${{ matrix.rid }}" `
+            /p:Version="${{ needs.prepare.outputs.version }}" `
+            /p:DebugType=None `
+            /p:DebugSymbols=false
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $publishDir = "artifacts/publish/${{ matrix.rid }}"
+          $packageRoot = "artifacts/package"
+          $packageDir = Join-Path $packageRoot "${{ matrix.asset_name }}"
+          New-Item -ItemType Directory -Force $packageDir | Out-Null
+
+          if ("${{ runner.os }}" -eq "Windows") {
+            Copy-Item (Join-Path $publishDir "FeatBit.Cli.exe") (Join-Path $packageDir "featbit.exe")
+          } else {
+            Copy-Item (Join-Path $publishDir "FeatBit.Cli") (Join-Path $packageDir "featbit")
+            chmod +x (Join-Path $packageDir "featbit")
+          }
+
+          Copy-Item README.md (Join-Path $packageDir "README.md")
+          "${{ needs.prepare.outputs.tag }}" | Set-Content (Join-Path $packageDir "VERSION.txt")
+
+          if ("${{ matrix.archive_ext }}" -eq "zip") {
+            Compress-Archive -Path (Join-Path $packageDir "*") -DestinationPath "artifacts/${{ matrix.asset_name }}.zip" -Force
+          } else {
+            tar -czf "artifacts/${{ matrix.asset_name }}.tar.gz" -C $packageRoot "${{ matrix.asset_name }}"
+          }
+
+      - name: Upload release asset
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset_name }}
+          path: artifacts/${{ matrix.asset_name }}.${{ matrix.archive_ext }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - prepare
+      - build
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          NOTES: ${{ inputs.notes }}
+        run: |
+          args=("$TAG" dist/* --verify-tag --title "$TAG")
+
+          if [ "$NOTES" = "generated" ]; then
+            args+=(--generate-notes)
+          else
+            args+=(--notes "")
+          fi
+
+          if [ "$DRAFT" = "true" ]; then
+            args+=(--draft)
+          fi
+
+          if [ "$PRERELEASE" = "true" ]; then
+            args+=(--prerelease)
+          fi
+
+          gh release create "${args[@]}"

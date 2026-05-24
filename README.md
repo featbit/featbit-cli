@@ -91,6 +91,19 @@ dotnet publish src/FeatBit.Cli/FeatBit.Cli.csproj -c Release -r win-x64
 
 On Windows, Native AOT requires the platform linker prerequisites, including Visual Studio C++ build tools.
 
+## Prebuilt Downloads
+
+Prebuilt Native AOT binaries are available from GitHub Releases:
+
+| Asset | Runner | Runtime |
+| --- | --- | --- |
+| `featbit-cli-win-x64.zip` | Windows x64 | `win-x64` |
+| `featbit-cli-linux-x64.tar.gz` | Linux x64 | `linux-x64` |
+| `featbit-cli-osx-x64.tar.gz` | macOS Intel | `osx-x64` |
+| `featbit-cli-osx-arm64.tar.gz` | macOS Apple Silicon | `osx-arm64` |
+
+Download the archive for your platform from the latest GitHub Release, extract it, and put `featbit` (`featbit.exe` on Windows) on your `PATH`.
+
 ### Installation After Publish
 
 After publishing, copy the output binary to a directory on your `PATH` so you can run `featbit` from anywhere:
