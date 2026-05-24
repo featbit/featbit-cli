@@ -205,7 +205,7 @@ jobs:
             rid: linux-x64
             asset_name: featbit-cli-linux-x64
             archive_ext: tar.gz
-          - os: macos-13
+          - os: macos-15-intel
             rid: osx-x64
             asset_name: featbit-cli-osx-x64
             archive_ext: tar.gz
