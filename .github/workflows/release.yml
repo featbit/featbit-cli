@@ -66,6 +66,15 @@ jobs:
 
           if ($explicitVersion.Length -gt 0) {
             $version = $explicitVersion.TrimStart($tagPrefix)
+
+            if ($version -notmatch "^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$") {
+              throw "Version '$version' is not valid. Use SemVer like 0.1.0 or 0.1.0-beta.1."
+            }
+
+            $tag = "$tagPrefix$version"
+            if (git rev-parse "$tag" 2>$null) {
+              throw "Tag '$tag' already exists. Use an unused explicit version, or leave version empty and select a bump."
+            }
           } else {
             $latestTag = git tag --list "$tagPrefix[0-9]*.[0-9]*.[0-9]*" --sort=-v:refname | Select-Object -First 1
 
@@ -74,19 +83,22 @@ jobs:
               if ($projectText -match "<Version>(?<version>[^<]+)</Version>") {
                 $version = $Matches.version.Trim()
               } else {
-                $version = "0.1.0"
+                $version = "0.0.0"
               }
             } else {
-              $base = $latestTag.TrimStart($tagPrefix)
-              $parts = $base.Split(".")
-              if ($parts.Length -ne 3) {
-                throw "Latest tag '$latestTag' is not a three-part semantic version."
-              }
+              $version = $latestTag.TrimStart($tagPrefix)
+            }
 
-              $major = [int]$parts[0]
-              $minor = [int]$parts[1]
-              $patch = [int]$parts[2]
+            if ($version -notmatch "^\d+\.\d+\.\d+$") {
+              throw "Automatic bump only supports stable three-part versions. Found '$version'. Provide an explicit unused version instead."
+            }
 
+            $parts = $version.Split(".")
+            $major = [int]$parts[0]
+            $minor = [int]$parts[1]
+            $patch = [int]$parts[2]
+
+            do {
               switch ("${{ inputs.bump }}") {
                 "major" { $major++; $minor = 0; $patch = 0 }
                 "minor" { $minor++; $patch = 0 }
@@ -95,16 +107,8 @@ jobs:
               }
 
               $version = "$major.$minor.$patch"
-            }
-          }
-
-          if ($version -notmatch "^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$") {
-            throw "Version '$version' is not valid. Use SemVer like 0.1.0 or 0.1.0-beta.1."
-          }
-
-          $tag = "$tagPrefix$version"
-          if (git rev-parse "$tag" 2>$null) {
-            throw "Tag '$tag' already exists."
+              $tag = "$tagPrefix$version"
+            } while (git rev-parse "$tag" 2>$null)
           }
 
           "version=$version" >> $env:GITHUB_OUTPUT
